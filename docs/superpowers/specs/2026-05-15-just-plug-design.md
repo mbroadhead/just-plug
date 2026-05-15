@@ -104,9 +104,11 @@ aws       github.com/bar/aws         main     789xyz0123456789...   sha256-2c26b
 ### `just-plug/modules.just` (machine-generated)
 
 ```just
-mod? docker "just-plug/docker.just"
-mod? aws "just-plug/aws.just"
+mod? docker "docker.just"
+mod? aws "aws.just"
 ```
+
+Paths are relative to `modules.just`'s own directory (`just-plug/`), because `just` resolves `mod?` paths relative to the file containing the directive — not the root justfile that imported it.
 
 Regenerated from the lockfile after every `install`/`remove`/`update`. The `mod?` form (with `?`) is used so removing a module file doesn't break justfile evaluation.
 
@@ -133,7 +135,7 @@ All three files are parseable with `awk '{print $1, $2, $3}'`. No TOML parser is
 - **Ref resolution:** `git ls-remote https://github.com/<owner>/<repo> <ref>`. A ref matching `^[0-9a-f]{7,40}$` is treated as a commit SHA and passed through unchanged (no remote round-trip).
 - **Hashing:** `shasum -a 256` (BSD/GNU compatible).
 - **Manifest/lock I/O:** `awk`, `grep -v`, `sort`. Writes go to a tempfile and are committed with atomic `mv`.
-- **`modules.just` generation:** `awk '{print "mod? " $1 " \"just-plug/" $1 ".just\""}'` over the lock.
+- **`modules.just` generation:** `awk '{print "mod? " $1 " \"" $1 ".just\""}'` over the lock (paths are relative to `modules.just`'s directory, not the project root).
 
 Dependency surface: `bash`, `curl`, `git`, `shasum`, plus `awk`/`grep`/`sed`/`sort`/`mv`/`mkdir`/`rm`/`mktemp`. No TOML parser, no jq, no Python.
 
