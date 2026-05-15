@@ -392,6 +392,52 @@ verify:
     fi
     exit "$fail"
 
+# Report modules whose pinned ref has moved upstream. Read-only.
+outdated:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    jf='{{justfile()}}'
+    found=0
+    base="${JUST_PLUG_GIT_BASE:-https://github.com}"
+    while read -r name source ref locked_sha hash; do
+        [ -z "$name" ] && continue
+        # SHA pin: never outdated.
+        if [[ "$ref" =~ ^[0-9a-f]{7,40}$ ]]; then
+            continue
+        fi
+        repo_path="${source#github.com/}"
+        url="$base/$repo_path"
+        # Try tag.
+        sha="$(git ls-remote "$url" "refs/tags/$ref" 2>/dev/null | awk 'NR==1{print $1}')"
+        if [ -n "$sha" ]; then
+            # Tag pin: look for newer tags by version-sort.
+            newest="$(git ls-remote --tags "$url" 2>/dev/null \
+                | awk '{print $2}' \
+                | sed 's|refs/tags/||' \
+                | grep -v '\^{}' \
+                | sort -V \
+                | tail -1)"
+            if [ -n "$newest" ] && [ "$newest" != "$ref" ]; then
+                # Only report if newest sorts strictly after ref.
+                latest_sorted="$(printf '%s\n%s\n' "$ref" "$newest" | sort -V | tail -1)"
+                if [ "$latest_sorted" = "$newest" ] && [ "$newest" != "$ref" ]; then
+                    echo "$name: $ref → $newest (newer tag available)"
+                    found=1
+                fi
+            fi
+            continue
+        fi
+        # Branch pin.
+        sha="$(git ls-remote "$url" "refs/heads/$ref" 2>/dev/null | awk 'NR==1{print $1}')"
+        if [ -n "$sha" ] && [ "$sha" != "$locked_sha" ]; then
+            echo "$name: $ref @ ${locked_sha:0:10} → ${sha:0:10} (branch moved)"
+            found=1
+        fi
+    done < <(just --justfile "$jf" plug _read-lock)
+    if [ "$found" -eq 0 ]; then
+        echo "all modules up to date"
+    fi
+
 # Bootstrap a project for just-plug. Idempotent.
 init:
     #!/usr/bin/env bash
