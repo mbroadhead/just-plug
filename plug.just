@@ -45,3 +45,34 @@ _parse-source spec:
     fi
 
     echo "$name $source $ref"
+
+# Resolve a ref to a 40-char commit SHA.
+# Args: <source> <ref>
+# - If <ref> matches ^[0-9a-f]{7,40}$, pass through unchanged.
+# - Otherwise, git ls-remote against $JUST_PLUG_GIT_BASE/<source>.
+_resolve-ref source ref:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source='{{source}}'
+    ref='{{ref}}'
+
+    if [[ "$ref" =~ ^[0-9a-f]{7,40}$ ]]; then
+        echo "$ref"
+        exit 0
+    fi
+
+    base="${JUST_PLUG_GIT_BASE:-https://github.com}"
+    url="$base/$source"
+
+    # Try tag first, then branch. ls-remote prints lines like "<sha>\t<full-ref>".
+    sha="$(git ls-remote "$url" "refs/tags/$ref" 2>/dev/null | awk 'NR==1{print $1}')"
+    if [ -z "$sha" ]; then
+        sha="$(git ls-remote "$url" "refs/heads/$ref" 2>/dev/null | awk 'NR==1{print $1}')"
+    fi
+
+    if [ -z "$sha" ]; then
+        echo "error: could not resolve ref '$ref' in $source" >&2
+        exit 1
+    fi
+
+    echo "$sha"

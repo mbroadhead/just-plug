@@ -14,7 +14,15 @@ unit:
     exit $fail
 
 integration:
-    @echo "(no integration tests yet)"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    fail=0
+    for t in integration/test_*.sh; do
+        echo "=== $t ==="
+        bash "$t" || fail=1
+    done
+    exit $fail
 
 smoke:
     @echo "just-plug skeleton OK"
