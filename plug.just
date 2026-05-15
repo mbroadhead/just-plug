@@ -313,6 +313,19 @@ remove name:
         echo "notice: $name was not installed" >&2
     fi
 
+# List installed modules with their pinned ref, resolved SHA, and source.
+list:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    jf='{{justfile()}}'
+    lock_lines="$(just --justfile "$jf" plug _read-lock)"
+    if [ -z "$lock_lines" ]; then
+        echo "no modules installed"
+        exit 0
+    fi
+    printf '%-20s %-12s %-10s %s\n' NAME REF SHA SOURCE
+    echo "$lock_lines" | awk '{printf "%-20s %-12s %-10s %s\n", $1, $3, substr($4,1,10), $2}'
+
 # Bootstrap a project for just-plug. Idempotent.
 init:
     #!/usr/bin/env bash
