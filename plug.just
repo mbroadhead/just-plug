@@ -291,6 +291,28 @@ install spec="":
 
     echo "installed $name @ $ref ($sha)"
 
+# Remove an installed module.
+remove name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root='{{justfile_directory()}}'
+    name='{{name}}'
+    jf='{{justfile()}}'
+    file="$root/just-plug/$name.just"
+    installed=0
+    if [ -f "$file" ]; then
+        rm -f "$file"
+        installed=1
+    fi
+    just --justfile "$jf" plug _remove-dep "$name"
+    just --justfile "$jf" plug _remove-lock "$name"
+    just --justfile "$jf" plug _gen-modules
+    if [ "$installed" -eq 1 ]; then
+        echo "removed $name"
+    else
+        echo "notice: $name was not installed" >&2
+    fi
+
 # Bootstrap a project for just-plug. Idempotent.
 init:
     #!/usr/bin/env bash
