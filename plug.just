@@ -11,3 +11,37 @@ _paths:
     @echo "LOCK={{justfile_directory()}}/just-plug.lock"
     @echo "PLUGDIR={{justfile_directory()}}/just-plug"
     @echo "MODSFILE={{justfile_directory()}}/just-plug/modules.just"
+
+# Parse a source identifier of the form github.com/<owner>/<repo>[@<ref>].
+# Outputs three space-separated fields on stdout: <name> <source> <ref>.
+# Exits non-zero on invalid input.
+_parse-source spec:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    spec='{{spec}}'
+
+    # Split off ref.
+    if [[ "$spec" == *"@"* ]]; then
+        ref="${spec##*@}"
+        source="${spec%@*}"
+    else
+        ref="main"
+        source="$spec"
+    fi
+
+    # Validate: must be github.com/<owner>/<repo> with no extra path components.
+    if [[ ! "$source" =~ ^github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+        echo "error: source must look like 'github.com/<owner>/<repo>', got: $source" >&2
+        exit 1
+    fi
+
+    # Derive name: repo basename minus leading 'just-'.
+    repo="${source##*/}"
+    name="${repo#just-}"
+
+    if [ -z "$name" ]; then
+        echo "error: derived module name is empty for source $source" >&2
+        exit 1
+    fi
+
+    echo "$name $source $ref"
