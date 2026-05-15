@@ -105,3 +105,20 @@ _fetch source sha filename dest:
     mv "$tmp" "$dest"
     trap - EXIT
     echo "$hash"
+
+# Read just-plug.deps, emitting "<name> <source> <ref>" per line.
+# Skips blank lines and lines starting with #. Missing file → no output.
+_read-deps:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    f='{{justfile_directory()}}/just-plug.deps'
+    if [ ! -f "$f" ]; then exit 0; fi
+    awk 'NF && $1 !~ /^#/ {print $1, $2, $3}' "$f"
+
+# Read just-plug.lock, emitting "<name> <source> <ref> <sha> <hash>" per line.
+_read-lock:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    f='{{justfile_directory()}}/just-plug.lock'
+    if [ ! -f "$f" ]; then exit 0; fi
+    awk 'NF && $1 !~ /^#/ {print $1, $2, $3, $4, $5}' "$f"
