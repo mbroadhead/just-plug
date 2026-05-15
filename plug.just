@@ -326,6 +326,46 @@ list:
     printf '%-20s %-12s %-10s %s\n' NAME REF SHA SOURCE
     echo "$lock_lines" | awk '{printf "%-20s %-12s %-10s %s\n", $1, $3, substr($4,1,10), $2}'
 
+# Re-resolve and refetch a module (or all modules if no name).
+update name="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root='{{justfile_directory()}}'
+    name='{{name}}'
+    jf='{{justfile()}}'
+
+    update_one() {
+        local n="$1" src="$2" ref="$3"
+        local new_sha old_sha old_hash new_hash
+        local repo_path="${src#github.com/}"
+        new_sha="$(just --justfile "$jf" plug _resolve-ref "$repo_path" "$ref")"
+        old_sha="$(awk -v n="$n" '$1==n {print $4}' "$root/just-plug.lock" 2>/dev/null || true)"
+        old_hash="$(awk -v n="$n" '$1==n {print $5}' "$root/just-plug.lock" 2>/dev/null || true)"
+        if [ "$new_sha" = "$old_sha" ] && [ -f "$root/just-plug/$n.just" ]; then
+            return 0  # no change
+        fi
+        new_hash="$(just --justfile "$jf" plug _fetch "$src" "$new_sha" "$n.just" "$root/just-plug/$n.just")"
+        just --justfile "$jf" plug _upsert-lock "$n" "$src" "$ref" "$new_sha" "$new_hash"
+        echo "updated $n: $old_sha → $new_sha"
+    }
+
+    if [ -n "$name" ]; then
+        line="$(just --justfile "$jf" plug _read-deps | awk -v n="$name" '$1==n')"
+        if [ -z "$line" ]; then
+            echo "error: $name is not declared in just-plug.deps" >&2
+            exit 1
+        fi
+        read -r n src ref <<<"$line"
+        update_one "$n" "$src" "$ref"
+    else
+        while read -r n src ref; do
+            [ -z "$n" ] && continue
+            update_one "$n" "$src" "$ref"
+        done < <(just --justfile "$jf" plug _read-deps)
+    fi
+
+    just --justfile "$jf" plug _gen-modules
+
 # Bootstrap a project for just-plug. Idempotent.
 init:
     #!/usr/bin/env bash
