@@ -6,7 +6,7 @@ A package manager for [just](https://just.systems) modules. Install third-party 
 
 ```sh
 mkdir -p just-plug
-curl -fsSL https://raw.githubusercontent.com/<owner>/just-plug/main/plug.just > just-plug/plug.just
+curl -fsSL https://raw.githubusercontent.com/mbroadhead/just-plug/main/plug.just > just-plug/plug.just
 ```
 
 Add two lines to your `justfile`:
