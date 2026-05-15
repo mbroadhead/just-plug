@@ -24,8 +24,8 @@ docker  github.com/foo/docker  v1.2.0  abc123  sha256-x
 aws     github.com/bar/aws     main    789xyz  sha256-y
 EOF
 just plug _gen-modules
-expected='mod? aws "just-plug/aws.just"
-mod? docker "just-plug/docker.just"'
+expected='mod? aws "aws.just"
+mod? docker "docker.just"'
 assert_eq "$expected" "$(cat just-plug/modules.just)" "modules.just sorted by name"
 
 assert_exit

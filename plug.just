@@ -179,7 +179,9 @@ _remove-lock name:
     mv "$tmp" "$f"
 
 # Regenerate just-plug/modules.just from just-plug.lock.
-# One `mod? <name> "just-plug/<name>.just"` line per locked entry, sorted.
+# One `mod? <name> "<name>.just"` line per locked entry, sorted.
+# Paths are relative to modules.just's own location (just-plug/), so just-plug/
+# resolves them correctly when `import?`ed from a parent justfile.
 _gen-modules:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -188,7 +190,7 @@ _gen-modules:
     mkdir -p "$(dirname "$out")"
     tmp="$(mktemp "${out}.XXXXXX")"
     if [ -f "$lock" ]; then
-        awk 'NF && $1 !~ /^#/ {print "mod? " $1 " \"just-plug/" $1 ".just\""}' "$lock" | sort > "$tmp"
+        awk 'NF && $1 !~ /^#/ {print "mod? " $1 " \"" $1 ".just\""}' "$lock" | sort > "$tmp"
     else
         : > "$tmp"
     fi

@@ -49,7 +49,7 @@ lock="$(cat just-plug.lock)"
 assert_contains "$lock" "docker github.com/demo/just-docker v1.0.0" "lock updated"
 
 mods="$(cat just-plug/modules.just)"
-assert_contains "$mods" 'mod? docker "just-plug/docker.just"' "modules.just regenerated"
+assert_contains "$mods" 'mod? docker "docker.just"' "modules.just regenerated"
 
 # Install a second, different module.
 just plug install github.com/demo/just-aws@v0.1.0
