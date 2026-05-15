@@ -366,6 +366,32 @@ update name="":
 
     just --justfile "$jf" plug _gen-modules
 
+# Verify installed module files match the lockfile hashes. Read-only. Non-zero on mismatch.
+verify:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root='{{justfile_directory()}}'
+    jf='{{justfile()}}'
+    fail=0
+    while read -r name source ref sha hash; do
+        [ -z "$name" ] && continue
+        file="$root/just-plug/$name.just"
+        if [ ! -f "$file" ]; then
+            echo "MISSING: $name ($file)"
+            fail=1
+            continue
+        fi
+        actual="$(shasum -a 256 < "$file" | awk '{print $1}')"
+        if [ "$actual" != "$hash" ]; then
+            echo "MISMATCH: $name (expected $hash, got $actual)"
+            fail=1
+        fi
+    done < <(just --justfile "$jf" plug _read-lock)
+    if [ "$fail" -eq 0 ]; then
+        echo "ok"
+    fi
+    exit "$fail"
+
 # Bootstrap a project for just-plug. Idempotent.
 init:
     #!/usr/bin/env bash
