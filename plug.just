@@ -194,6 +194,59 @@ _gen-modules:
     fi
     mv "$tmp" "$out"
 
+# Install a single module. Usage: just plug install github.com/<owner>/<repo>[@<ref>]
+install spec:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root='{{justfile_directory()}}'
+    jf='{{justfile()}}'
+
+    # Parse inline (mirrors _parse-source logic) to avoid sub-just cwd issues.
+    spec='{{spec}}'
+    if [[ "$spec" == *"@"* ]]; then
+        ref="${spec##*@}"
+        source="${spec%@*}"
+    else
+        ref="main"
+        source="$spec"
+    fi
+    if [[ ! "$source" =~ ^github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+        echo "error: source must look like 'github.com/<owner>/<repo>', got: $source" >&2
+        exit 1
+    fi
+    repo="${source##*/}"
+    name="${repo#just-}"
+    if [ -z "$name" ]; then
+        echo "error: derived module name is empty for source $source" >&2
+        exit 1
+    fi
+
+    # Collision check: same name, different source already installed?
+    if [ -f "$root/just-plug.lock" ]; then
+        existing_src="$(awk -v n="$name" '$1 == n {print $2}' "$root/just-plug.lock")"
+        if [ -n "$existing_src" ] && [ "$existing_src" != "$source" ]; then
+            echo "error: module '$name' is already installed from $existing_src" >&2
+            echo "       remove it first with: just plug remove $name" >&2
+            exit 1
+        fi
+    fi
+
+    # Resolve ref → SHA.
+    # _resolve-ref expects "<owner>/<repo>", not "github.com/<owner>/<repo>".
+    repo_path="${source#github.com/}"
+    sha="$(just --justfile "$jf" plug _resolve-ref "$repo_path" "$ref")"
+
+    # Fetch into just-plug/<name>.just (atomic).
+    mkdir -p "$root/just-plug"
+    hash="$(just --justfile "$jf" plug _fetch "$source" "$sha" "$name.just" "$root/just-plug/$name.just")"
+
+    # Update state.
+    just --justfile "$jf" plug _upsert-dep "$name" "$source" "$ref"
+    just --justfile "$jf" plug _upsert-lock "$name" "$source" "$ref" "$sha" "$hash"
+    just --justfile "$jf" plug _gen-modules
+
+    echo "installed $name @ $ref ($sha)"
+
 # Bootstrap a project for just-plug. Idempotent.
 init:
     #!/usr/bin/env bash
