@@ -76,3 +76,32 @@ _resolve-ref source ref:
     fi
 
     echo "$sha"
+
+# Fetch <filename> at <sha> from <source> to <dest>.
+# Writes via tempfile + atomic mv; on failure, <dest> is untouched.
+# Outputs the sha256 of the fetched content on success.
+_fetch source sha filename dest:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source='{{source}}'
+    sha='{{sha}}'
+    filename='{{filename}}'
+    dest='{{dest}}'
+
+    base="${JUST_PLUG_RAW_BASE:-https://raw.githubusercontent.com}"
+    # source is "github.com/<owner>/<repo>"; strip the "github.com/" prefix for the raw URL.
+    repo_path="${source#github.com/}"
+    url="$base/$repo_path/$sha/$filename"
+
+    tmp="$(mktemp "${dest}.XXXXXX")"
+    trap 'rm -f "$tmp"' EXIT
+
+    if ! curl -fsSL --max-time 60 -o "$tmp" "$url"; then
+        echo "error: fetch failed: $url" >&2
+        exit 1
+    fi
+
+    hash="$(shasum -a 256 < "$tmp" | awk '{print $1}')"
+    mv "$tmp" "$dest"
+    trap - EXIT
+    echo "$hash"
