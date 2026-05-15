@@ -194,15 +194,59 @@ _gen-modules:
     fi
     mv "$tmp" "$out"
 
-# Install a single module. Usage: just plug install github.com/<owner>/<repo>[@<ref>]
-install spec:
+# Install a single module, or (no args) reconcile state against just-plug.deps.
+# Usage: just plug install [github.com/<owner>/<repo>[@<ref>]]
+install spec="":
     #!/usr/bin/env bash
     set -euo pipefail
     root='{{justfile_directory()}}'
     jf='{{justfile()}}'
 
-    # Parse inline (mirrors _parse-source logic) to avoid sub-just cwd issues.
     spec='{{spec}}'
+
+    if [ -z "$spec" ]; then
+        # Reconcile mode.
+        # 1. For every dep, install at lock SHA if present, else freshly resolve.
+        # 2. Remove any installed module not in deps.
+        deps_names="$(just --justfile "$jf" plug _read-deps | awk '{print $1}' | sort -u)"
+        lock_names="$(just --justfile "$jf" plug _read-lock | awk '{print $1}' | sort -u)"
+
+        # Install / refresh every dep entry.
+        while read -r name source ref; do
+            [ -z "$name" ] && continue
+            locked_line="$(just --justfile "$jf" plug _read-lock | awk -v n="$name" -v s="$source" -v r="$ref" '$1==n && $2==s && $3==r {print}')"
+            if [ -n "$locked_line" ]; then
+                sha="$(echo "$locked_line" | awk '{print $4}')"
+                hash_recorded="$(echo "$locked_line" | awk '{print $5}')"
+            else
+                # _resolve-ref expects "<owner>/<repo>", not "github.com/<owner>/<repo>".
+                repo_path="${source#github.com/}"
+                sha="$(just --justfile "$jf" plug _resolve-ref "$repo_path" "$ref")"
+                hash_recorded=""
+            fi
+            # If file already present and lock has hash, only re-fetch when missing.
+            if [ -f "$root/just-plug/$name.just" ] && [ -n "$hash_recorded" ]; then
+                : # leave it
+            else
+                hash_recorded="$(just --justfile "$jf" plug _fetch "$source" "$sha" "$name.just" "$root/just-plug/$name.just")"
+            fi
+            just --justfile "$jf" plug _upsert-lock "$name" "$source" "$ref" "$sha" "$hash_recorded"
+        done < <(just --justfile "$jf" plug _read-deps)
+
+        # Orphans: anything in lock_names not in deps_names → remove.
+        for name in $lock_names; do
+            if ! echo "$deps_names" | grep -qxF "$name"; then
+                rm -f "$root/just-plug/$name.just"
+                just --justfile "$jf" plug _remove-lock "$name"
+            fi
+        done
+
+        just --justfile "$jf" plug _gen-modules
+        exit 0
+    fi
+
+    # Single-install mode (existing behavior).
+    # Parse inline (mirrors _parse-source logic) to avoid sub-just cwd issues.
     if [[ "$spec" == *"@"* ]]; then
         ref="${spec##*@}"
         source="${spec%@*}"
