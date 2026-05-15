@@ -16,6 +16,13 @@ _FIXTURE_RAW_ROOT=""
 _FIXTURE_HTTP_PID=""
 
 fixture_setup() {
+    # Kill any previously running server.
+    if [ -n "$_FIXTURE_HTTP_PID" ]; then
+        kill "$_FIXTURE_HTTP_PID" 2>/dev/null || true
+        wait "$_FIXTURE_HTTP_PID" 2>/dev/null || true
+        _FIXTURE_HTTP_PID=""
+    fi
+
     local base="$1"
     _FIXTURE_ROOT="$base"
     _FIXTURE_GIT_ROOT="$base/git"
@@ -62,7 +69,8 @@ fixture_add_module() {
 
     (
         cd "$work"
-        git init -q -b main
+        git init -q
+        git symbolic-ref HEAD refs/heads/main
         printf '%s' "$content" > "$file"
         git add "$file"
         git -c user.email=t@t -c user.name=t commit -q -m "add $file"
@@ -89,5 +97,8 @@ fixture_teardown() {
         wait "$_FIXTURE_HTTP_PID" 2>/dev/null || true
         _FIXTURE_HTTP_PID=""
     fi
+    _FIXTURE_ROOT=""
+    _FIXTURE_GIT_ROOT=""
+    _FIXTURE_RAW_ROOT=""
     unset JUST_PLUG_GIT_BASE JUST_PLUG_RAW_BASE
 }
