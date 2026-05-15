@@ -193,3 +193,20 @@ _gen-modules:
         : > "$tmp"
     fi
     mv "$tmp" "$out"
+
+# Bootstrap a project for just-plug. Idempotent.
+init:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root='{{justfile_directory()}}'
+    mkdir -p "$root/just-plug"
+    [ -f "$root/just-plug.deps" ] || : > "$root/just-plug.deps"
+    printf '%s\n' \
+        'just-plug ready. Add these two lines to your justfile if they'\''re not already there:' \
+        '' \
+        '    mod? plug "just-plug/plug.just"' \
+        '    import? "just-plug/modules.just"' \
+        '' \
+        'Then install modules with:' \
+        '' \
+        '    just plug install github.com/<owner>/<repo>[@<ref>]'
