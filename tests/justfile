@@ -1,0 +1,12 @@
+# Test harness for just-plug. Run with: just -f tests/justfile test
+
+test: unit integration
+
+unit:
+    @echo "(no unit tests yet)"
+
+integration:
+    @echo "(no integration tests yet)"
+
+smoke:
+    @echo "just-plug skeleton OK"
