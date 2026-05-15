@@ -177,3 +177,19 @@ _remove-lock name:
     tmp="$(mktemp "${f}.XXXXXX")"
     awk -v n="$name" 'NF && $1 !~ /^#/ && $1 != n {print $1, $2, $3, $4, $5}' "$f" | sort > "$tmp"
     mv "$tmp" "$f"
+
+# Regenerate just-plug/modules.just from just-plug.lock.
+# One `mod? <name> "just-plug/<name>.just"` line per locked entry, sorted.
+_gen-modules:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    lock='{{justfile_directory()}}/just-plug.lock'
+    out='{{justfile_directory()}}/just-plug/modules.just'
+    mkdir -p "$(dirname "$out")"
+    tmp="$(mktemp "${out}.XXXXXX")"
+    if [ -f "$lock" ]; then
+        awk 'NF && $1 !~ /^#/ {print "mod? " $1 " \"just-plug/" $1 ".just\""}' "$lock" | sort > "$tmp"
+    else
+        : > "$tmp"
+    fi
+    mv "$tmp" "$out"
