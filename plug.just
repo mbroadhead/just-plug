@@ -210,6 +210,7 @@ install spec="":
         # Reconcile mode.
         # 1. For every dep, install at lock SHA if present, else freshly resolve.
         # 2. Remove any installed module not in deps.
+        mkdir -p "$root/just-plug"
         deps_names="$(just --justfile "$jf" plug _read-deps | awk '{print $1}' | sort -u)"
         lock_names="$(just --justfile "$jf" plug _read-lock | awk '{print $1}' | sort -u)"
 

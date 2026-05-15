@@ -20,16 +20,17 @@ fixture_add_module "demo/just-docker" "docker.just" "v1.0.0" "docker"
 fixture_add_module "demo/just-aws"    "aws.just"    "v0.1.0" "aws"
 
 cd "$PROJ"
-just plug init >/dev/null
 
-# Hand-write a deps file (simulating: cloned a project with deps already declared).
+# Hand-write a deps file WITHOUT running init (simulating: cloned a project
+# where just-plug/ is gitignored — only just-plug.deps is committed).
 cat > just-plug.deps <<'EOF'
 docker  github.com/demo/just-docker  v1.0.0
 aws     github.com/demo/just-aws     v0.1.0
 EOF
 
-# No-arg install reconciles: installs both modules.
+# No-arg install reconciles: must create just-plug/ itself before fetching.
 just plug install
+assert_file_exists "$PROJ/just-plug" "reconcile creates just-plug/ when missing"
 assert_file_exists "$PROJ/just-plug/docker.just" "docker installed by reconcile"
 assert_file_exists "$PROJ/just-plug/aws.just" "aws installed by reconcile"
 assert_contains "$(cat just-plug.lock)" "docker github.com/demo/just-docker v1.0.0" "lock has docker"
