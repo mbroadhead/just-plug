@@ -122,3 +122,58 @@ _read-lock:
     f='{{justfile_directory()}}/just-plug.lock'
     if [ ! -f "$f" ]; then exit 0; fi
     awk 'NF && $1 !~ /^#/ {print $1, $2, $3, $4, $5}' "$f"
+
+# Insert or update a deps entry by name.
+# Args: <name> <source> <ref>
+_upsert-dep name source ref:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    f='{{justfile_directory()}}/just-plug.deps'
+    name='{{name}}' source='{{source}}' ref='{{ref}}'
+    tmp="$(mktemp "${f}.XXXXXX")"
+    {
+        # Carry over existing lines that don't match this name.
+        if [ -f "$f" ]; then
+            awk -v n="$name" 'NF && $1 !~ /^#/ && $1 != n {print $1, $2, $3}' "$f"
+        fi
+        echo "$name $source $ref"
+    } | sort > "$tmp"
+    mv "$tmp" "$f"
+
+# Remove a deps entry by name.
+_remove-dep name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    f='{{justfile_directory()}}/just-plug.deps'
+    name='{{name}}'
+    if [ ! -f "$f" ]; then exit 0; fi
+    tmp="$(mktemp "${f}.XXXXXX")"
+    awk -v n="$name" 'NF && $1 !~ /^#/ && $1 != n {print $1, $2, $3}' "$f" | sort > "$tmp"
+    mv "$tmp" "$f"
+
+# Insert or update a lock entry by name.
+# Args: <name> <source> <ref> <sha> <hash>
+_upsert-lock name source ref sha hash:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    f='{{justfile_directory()}}/just-plug.lock'
+    name='{{name}}' source='{{source}}' ref='{{ref}}' sha='{{sha}}' hash='{{hash}}'
+    tmp="$(mktemp "${f}.XXXXXX")"
+    {
+        if [ -f "$f" ]; then
+            awk -v n="$name" 'NF && $1 !~ /^#/ && $1 != n {print $1, $2, $3, $4, $5}' "$f"
+        fi
+        echo "$name $source $ref $sha $hash"
+    } | sort > "$tmp"
+    mv "$tmp" "$f"
+
+# Remove a lock entry by name.
+_remove-lock name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    f='{{justfile_directory()}}/just-plug.lock'
+    name='{{name}}'
+    if [ ! -f "$f" ]; then exit 0; fi
+    tmp="$(mktemp "${f}.XXXXXX")"
+    awk -v n="$name" 'NF && $1 !~ /^#/ && $1 != n {print $1, $2, $3, $4, $5}' "$f" | sort > "$tmp"
+    mv "$tmp" "$f"
