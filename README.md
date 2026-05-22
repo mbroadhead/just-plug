@@ -50,6 +50,10 @@ just plug verify
 # Check whether any modules have newer versions available.
 just plug outdated
 
+# Update just-plug itself (defaults to mbroadhead/just-plug@main).
+just plug self-update
+just plug self-update @v1.0.0
+
 # Reconcile: install everything in just-plug.deps, remove orphans.
 just plug install
 ```
