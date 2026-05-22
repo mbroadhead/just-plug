@@ -309,20 +309,62 @@ install spec="":
         exit 0
     fi
 
-    # Single-install mode (existing behavior).
+    # Single-install mode.
     # Parse inline (mirrors _parse-source logic) to avoid sub-just cwd issues.
-    if [[ "$spec" == *"@"* ]]; then
-        ref="${spec##*@}"
-        source="${spec%@*}"
+    if [[ "$spec" =~ ^https:// ]] || [[ "$spec" =~ ^file:// ]]; then
+        scheme="${spec%%://*}://"
+        rest="${spec#*://}"
+        if [[ "$rest" != */* ]]; then
+            echo "error: URL must have a path component: $spec" >&2
+            exit 1
+        fi
+        authority="${rest%%/*}"
+        path_part="${rest#*/}"
+        if [[ "$path_part" == *"@"* ]]; then
+            ref="${path_part##*@}"
+            path_part="${path_part%@*}"
+        else
+            ref="main"
+        fi
+        path_part="${path_part%.git}"
+        path_part="${path_part%/}"
+        if [ -z "$path_part" ] || [[ "$path_part" != */* ]]; then
+            echo "error: URL must have an owner/repo path: $spec" >&2
+            exit 1
+        fi
+        source="${scheme}${authority}/${path_part}"
+        repo="${path_part##*/}"
+    elif [[ "$spec" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+: ]]; then
+        userhost="${spec%%:*}"
+        path_part="${spec#*:}"
+        if [[ "$path_part" == *"@"* ]]; then
+            ref="${path_part##*@}"
+            path_part="${path_part%@*}"
+        else
+            ref="main"
+        fi
+        path_part="${path_part%.git}"
+        path_part="${path_part%/}"
+        if [ -z "$path_part" ] || [[ "$path_part" != */* ]]; then
+            echo "error: SSH URL must have an owner/repo path: $spec" >&2
+            exit 1
+        fi
+        source="${userhost}:${path_part}"
+        repo="${path_part##*/}"
     else
-        ref="main"
-        source="$spec"
+        if [[ "$spec" == *"@"* ]]; then
+            ref="${spec##*@}"
+            source="${spec%@*}"
+        else
+            ref="main"
+            source="$spec"
+        fi
+        if [[ ! "$source" =~ ^github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+            echo "error: source must look like 'github.com/<owner>/<repo>', got: $source" >&2
+            exit 1
+        fi
+        repo="${source##*/}"
     fi
-    if [[ ! "$source" =~ ^github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
-        echo "error: source must look like 'github.com/<owner>/<repo>', got: $source" >&2
-        exit 1
-    fi
-    repo="${source##*/}"
     name="${repo#just-}"
     if [ -z "$name" ]; then
         echo "error: derived module name is empty for source $source" >&2
