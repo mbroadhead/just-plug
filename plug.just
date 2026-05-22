@@ -16,11 +16,20 @@ default: help
 
 # Print plug-internal paths. Used by tests; harmless for users.
 _paths:
-    @echo "ROOT={{justfile_directory()}}"
-    @echo "DEPS={{justfile_directory()}}/just-plug.deps"
-    @echo "LOCK={{justfile_directory()}}/just-plug.lock"
-    @echo "PLUGDIR={{justfile_directory()}}/just-plug"
-    @echo "MODSFILE={{justfile_directory()}}/just-plug/modules.just"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root='{{justfile_directory()}}'
+    if [ -n "${JUST_PLUG_DIR:-}" ]; then
+        case "$JUST_PLUG_DIR" in
+            /*) root="$JUST_PLUG_DIR" ;;
+            *)  root="$root/$JUST_PLUG_DIR" ;;
+        esac
+    fi
+    echo "ROOT=$root"
+    echo "DEPS=$root/just-plug.deps"
+    echo "LOCK=$root/just-plug.lock"
+    echo "PLUGDIR=$root/just-plug"
+    echo "MODSFILE=$root/just-plug/modules.just"
 
 # Parse a source identifier. Accepted forms (each may have an optional @<ref> suffix):
 #   github.com/<owner>/<repo>            (bare — fetched via raw.githubusercontent.com)
@@ -203,7 +212,14 @@ _fetch source sha filename dest:
 _read-deps:
     #!/usr/bin/env bash
     set -euo pipefail
-    f='{{justfile_directory()}}/just-plug.deps'
+    root='{{justfile_directory()}}'
+    if [ -n "${JUST_PLUG_DIR:-}" ]; then
+        case "$JUST_PLUG_DIR" in
+            /*) root="$JUST_PLUG_DIR" ;;
+            *)  root="$root/$JUST_PLUG_DIR" ;;
+        esac
+    fi
+    f="$root/just-plug.deps"
     if [ ! -f "$f" ]; then exit 0; fi
     awk 'NF && $1 !~ /^#/ {print $1, $2, $3}' "$f"
 
@@ -211,7 +227,14 @@ _read-deps:
 _read-lock:
     #!/usr/bin/env bash
     set -euo pipefail
-    f='{{justfile_directory()}}/just-plug.lock'
+    root='{{justfile_directory()}}'
+    if [ -n "${JUST_PLUG_DIR:-}" ]; then
+        case "$JUST_PLUG_DIR" in
+            /*) root="$JUST_PLUG_DIR" ;;
+            *)  root="$root/$JUST_PLUG_DIR" ;;
+        esac
+    fi
+    f="$root/just-plug.lock"
     if [ ! -f "$f" ]; then exit 0; fi
     awk 'NF && $1 !~ /^#/ {print $1, $2, $3, $4, $5}' "$f"
 
@@ -220,7 +243,14 @@ _read-lock:
 _upsert-dep name source ref:
     #!/usr/bin/env bash
     set -euo pipefail
-    f='{{justfile_directory()}}/just-plug.deps'
+    root='{{justfile_directory()}}'
+    if [ -n "${JUST_PLUG_DIR:-}" ]; then
+        case "$JUST_PLUG_DIR" in
+            /*) root="$JUST_PLUG_DIR" ;;
+            *)  root="$root/$JUST_PLUG_DIR" ;;
+        esac
+    fi
+    f="$root/just-plug.deps"
     name='{{name}}' source='{{source}}' ref='{{ref}}'
     tmp="$(mktemp "${f}.XXXXXX")"
     {
@@ -236,7 +266,14 @@ _upsert-dep name source ref:
 _remove-dep name:
     #!/usr/bin/env bash
     set -euo pipefail
-    f='{{justfile_directory()}}/just-plug.deps'
+    root='{{justfile_directory()}}'
+    if [ -n "${JUST_PLUG_DIR:-}" ]; then
+        case "$JUST_PLUG_DIR" in
+            /*) root="$JUST_PLUG_DIR" ;;
+            *)  root="$root/$JUST_PLUG_DIR" ;;
+        esac
+    fi
+    f="$root/just-plug.deps"
     name='{{name}}'
     if [ ! -f "$f" ]; then exit 0; fi
     tmp="$(mktemp "${f}.XXXXXX")"
@@ -248,7 +285,14 @@ _remove-dep name:
 _upsert-lock name source ref sha hash:
     #!/usr/bin/env bash
     set -euo pipefail
-    f='{{justfile_directory()}}/just-plug.lock'
+    root='{{justfile_directory()}}'
+    if [ -n "${JUST_PLUG_DIR:-}" ]; then
+        case "$JUST_PLUG_DIR" in
+            /*) root="$JUST_PLUG_DIR" ;;
+            *)  root="$root/$JUST_PLUG_DIR" ;;
+        esac
+    fi
+    f="$root/just-plug.lock"
     name='{{name}}' source='{{source}}' ref='{{ref}}' sha='{{sha}}' hash='{{hash}}'
     tmp="$(mktemp "${f}.XXXXXX")"
     {
@@ -263,7 +307,14 @@ _upsert-lock name source ref sha hash:
 _remove-lock name:
     #!/usr/bin/env bash
     set -euo pipefail
-    f='{{justfile_directory()}}/just-plug.lock'
+    root='{{justfile_directory()}}'
+    if [ -n "${JUST_PLUG_DIR:-}" ]; then
+        case "$JUST_PLUG_DIR" in
+            /*) root="$JUST_PLUG_DIR" ;;
+            *)  root="$root/$JUST_PLUG_DIR" ;;
+        esac
+    fi
+    f="$root/just-plug.lock"
     name='{{name}}'
     if [ ! -f "$f" ]; then exit 0; fi
     tmp="$(mktemp "${f}.XXXXXX")"
@@ -277,8 +328,15 @@ _remove-lock name:
 _gen-modules:
     #!/usr/bin/env bash
     set -euo pipefail
-    lock='{{justfile_directory()}}/just-plug.lock'
-    out='{{justfile_directory()}}/just-plug/modules.just'
+    root='{{justfile_directory()}}'
+    if [ -n "${JUST_PLUG_DIR:-}" ]; then
+        case "$JUST_PLUG_DIR" in
+            /*) root="$JUST_PLUG_DIR" ;;
+            *)  root="$root/$JUST_PLUG_DIR" ;;
+        esac
+    fi
+    lock="$root/just-plug.lock"
+    out="$root/just-plug/modules.just"
     mkdir -p "$(dirname "$out")"
     tmp="$(mktemp "${out}.XXXXXX")"
     if [ -f "$lock" ]; then
