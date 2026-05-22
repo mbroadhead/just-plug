@@ -12,33 +12,82 @@ _paths:
     @echo "PLUGDIR={{justfile_directory()}}/just-plug"
     @echo "MODSFILE={{justfile_directory()}}/just-plug/modules.just"
 
-# Parse a source identifier of the form github.com/<owner>/<repo>[@<ref>].
-# Outputs three space-separated fields on stdout: <name> <source> <ref>.
+# Parse a source identifier. Accepted forms (each may have an optional @<ref> suffix):
+#   github.com/<owner>/<repo>            (bare — fetched via raw.githubusercontent.com)
+#   https://<host>/<path>/<repo>[.git]   (HTTPS URL — fetched via git)
+#   <user>@<host>:<path>/<repo>[.git]    (SSH URL — fetched via git)
+#   file:///<path>/<repo>[.git]          (file URL — fetched via git, mainly for tests)
+#
+# Output (stdout): "<name> <source> <ref>" — three space-separated fields.
+# `source` is the form as typed, with trailing .git and trailing / stripped.
 # Exits non-zero on invalid input.
 _parse-source spec:
     #!/usr/bin/env bash
     set -euo pipefail
     spec='{{spec}}'
 
-    # Split off ref.
-    if [[ "$spec" == *"@"* ]]; then
-        ref="${spec##*@}"
-        source="${spec%@*}"
+    if [[ "$spec" =~ ^https:// ]] || [[ "$spec" =~ ^file:// ]]; then
+        # HTTPS/file URL form: <scheme>://<authority>/<path>[@<ref>]
+        scheme="${spec%%://*}://"
+        rest="${spec#*://}"
+        if [[ "$rest" != */* ]]; then
+            echo "error: URL must have a path component: $spec" >&2
+            exit 1
+        fi
+        authority="${rest%%/*}"
+        path_part="${rest#*/}"
+        # Split @<ref> from the path only — preserves any @ in userinfo (authority).
+        if [[ "$path_part" == *"@"* ]]; then
+            ref="${path_part##*@}"
+            path_part="${path_part%@*}"
+        else
+            ref="main"
+        fi
+        # Strip trailing .git and trailing /.
+        path_part="${path_part%.git}"
+        path_part="${path_part%/}"
+        if [ -z "$path_part" ] || [[ "$path_part" != */* ]]; then
+            echo "error: URL must have an owner/repo path: $spec" >&2
+            exit 1
+        fi
+        source="${scheme}${authority}/${path_part}"
+        repo="${path_part##*/}"
+    elif [[ "$spec" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+: ]]; then
+        # SSH URL form: <user>@<host>:<path>[@<ref>]
+        userhost="${spec%%:*}"
+        path_part="${spec#*:}"
+        if [[ "$path_part" == *"@"* ]]; then
+            ref="${path_part##*@}"
+            path_part="${path_part%@*}"
+        else
+            ref="main"
+        fi
+        path_part="${path_part%.git}"
+        path_part="${path_part%/}"
+        if [ -z "$path_part" ] || [[ "$path_part" != */* ]]; then
+            echo "error: SSH URL must have an owner/repo path: $spec" >&2
+            exit 1
+        fi
+        source="${userhost}:${path_part}"
+        repo="${path_part##*/}"
     else
-        ref="main"
-        source="$spec"
-    fi
-
-    # Validate: must be github.com/<owner>/<repo> with no extra path components.
-    if [[ ! "$source" =~ ^github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
-        echo "error: source must look like 'github.com/<owner>/<repo>', got: $source" >&2
-        exit 1
+        # Bare form: github.com/<owner>/<repo>[@<ref>]
+        if [[ "$spec" == *"@"* ]]; then
+            ref="${spec##*@}"
+            source="${spec%@*}"
+        else
+            ref="main"
+            source="$spec"
+        fi
+        if [[ ! "$source" =~ ^github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+            echo "error: source must look like 'github.com/<owner>/<repo>', got: $source" >&2
+            exit 1
+        fi
+        repo="${source##*/}"
     fi
 
     # Derive name: repo basename minus leading 'just-'.
-    repo="${source##*/}"
     name="${repo#just-}"
-
     if [ -z "$name" ]; then
         echo "error: derived module name is empty for source $source" >&2
         exit 1
