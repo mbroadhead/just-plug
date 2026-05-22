@@ -568,6 +568,42 @@ outdated:
         echo "all modules up to date"
     fi
 
+# Update just-plug itself. Defaults to github.com/mbroadhead/just-plug@main.
+# Accepts the same spec forms as `install`, plus a bare `@<ref>` shorthand.
+self-update spec="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root='{{justfile_directory()}}'
+    jf='{{justfile()}}'
+    spec='{{spec}}'
+
+    # Expand shorthand: empty or bare @<ref> → default source.
+    if [ -z "$spec" ]; then
+        spec="github.com/mbroadhead/just-plug@main"
+    elif [[ "$spec" == @* ]]; then
+        spec="github.com/mbroadhead/just-plug${spec}"
+    fi
+
+    parsed="$(just --justfile "$jf" plug _parse-source "$spec")"
+    read -r _ source ref <<<"$parsed"
+
+    sha="$(just --justfile "$jf" plug _resolve-ref "$source" "$ref")"
+    short_sha="${sha:0:7}"
+
+    target="$root/just-plug/plug.just"
+    tmp="$(mktemp "${target}.XXXXXX")"
+    trap 'rm -f "$tmp"' EXIT
+    just --justfile "$jf" plug _fetch "$source" "$sha" plug.just "$tmp" >/dev/null
+
+    if [ -f "$target" ] && cmp -s "$target" "$tmp"; then
+        echo "just-plug is up to date at $short_sha"
+        exit 0
+    fi
+
+    mv "$tmp" "$target"
+    trap - EXIT
+    echo "updated just-plug → $short_sha ($source@$ref)"
+
 # Bootstrap a project for just-plug. Idempotent.
 init:
     #!/usr/bin/env bash
