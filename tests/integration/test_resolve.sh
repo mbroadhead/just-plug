@@ -22,23 +22,23 @@ fixture_add_module "demo/just-docker" "docker.just" "v1.0.0" 'show:
 '
 
 # Resolve a tag — should return a 40-char SHA.
-SHA="$(cd "$PROJ" && just plug _resolve-ref demo/just-docker v1.0.0)"
+SHA="$(cd "$PROJ" && just plug _resolve-ref github.com/demo/just-docker v1.0.0)"
 assert_eq 40 "${#SHA}" "tag resolves to 40-char SHA"
 
 # Resolve the default branch.
-MAIN_SHA="$(cd "$PROJ" && just plug _resolve-ref demo/just-docker main)"
+MAIN_SHA="$(cd "$PROJ" && just plug _resolve-ref github.com/demo/just-docker main)"
 assert_eq 40 "${#MAIN_SHA}" "branch resolves to 40-char SHA"
 
 # Pass-through for SHAs.
-OUT="$(cd "$PROJ" && just plug _resolve-ref demo/just-docker "$SHA")"
+OUT="$(cd "$PROJ" && just plug _resolve-ref github.com/demo/just-docker "$SHA")"
 assert_eq "$SHA" "$OUT" "SHA passes through unchanged"
 
 # Short SHA-like (10 hex chars) also passes through.
-OUT="$(cd "$PROJ" && just plug _resolve-ref demo/just-docker abc1234567)"
+OUT="$(cd "$PROJ" && just plug _resolve-ref github.com/demo/just-docker abc1234567)"
 assert_eq "abc1234567" "$OUT" "short SHA passes through"
 
 # Nonexistent ref fails.
-if (cd "$PROJ" && just plug _resolve-ref demo/just-docker no-such-ref) 2>/dev/null; then
+if (cd "$PROJ" && just plug _resolve-ref github.com/demo/just-docker no-such-ref) 2>/dev/null; then
     ASSERT_FAIL=$((ASSERT_FAIL + 1))
     echo "FAIL: missing ref should error"
 else

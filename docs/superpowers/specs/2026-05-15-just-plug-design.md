@@ -46,7 +46,12 @@ After bootstrap, the user runs `just plug init` to create the `just-plug/` direc
 
 ## 4. Naming convention
 
-- **Source identifier:** `github.com/<owner>/<repo>` (no scheme, no `.git`, no file suffix). GitHub-only for v1.
+- **Source identifier:** one of three forms (each may carry an optional `@<ref>` suffix):
+    - `github.com/<owner>/<repo>` — bare GitHub identifier; fetched via `raw.githubusercontent.com`.
+    - `https://<host>/<path>/<repo>[.git]` — HTTPS URL; fetched via `git fetch --depth 1`.
+    - `<user>@<host>:<path>/<repo>[.git]` — SSH URL; fetched via `git fetch --depth 1`, suitable for private repos via SSH key auth.
+
+  Bare form is github.com-only. URL forms route through `git` and so respect the user's git auth (SSH keys, credential helpers); they work with any host `git` understands. Trailing `.git` and trailing `/` are stripped at storage time.
 - **Module name:** the repo basename with a leading `just-` stripped. `github.com/foo/just-docker` → `docker`. `github.com/foo/docker` → also `docker`. This matches the convention where ecosystem packages prefix themselves (`bundler-rails`, `eslint-config-airbnb`) while keeping the import name clean.
 - **Entry file in the source repo:** `<module-name>.just` at the repo root. A repo named `just-docker` must contain `docker.just` at its root.
 - **Local install path:** `just-plug/<module-name>.just`.
@@ -131,8 +136,9 @@ All three files are parseable with `awk '{print $1, $2, $3}'`. No TOML parser is
 
 `plug.just` is a justfile module. Every command is a just recipe that shells out to standard Unix tools.
 
-- **HTTP fetch:** `curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/<sha>/<name>.just`
-- **Ref resolution:** `git ls-remote https://github.com/<owner>/<repo> <ref>`. A ref matching `^[0-9a-f]{7,40}$` is treated as a commit SHA and passed through unchanged (no remote round-trip).
+- **Bare-form fetch:** `curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/<sha>/<name>.just`
+- **URL-form fetch:** `git init` a tempdir, `git remote add origin <url>`, `git fetch --depth 1 origin <sha>`, `git cat-file -p <sha>:<name>.just`. Relies on GitHub's platform-wide `uploadpack.allowReachableSHA1InWant`; other hosts must enable the same option (test fixtures set `uploadpack.allowAnySHA1InWant`).
+- **Ref resolution:** `git ls-remote <url> <ref>`, where `<url>` is derived per source form (bare → `https://github.com/<owner>/<repo>`; URL forms used as-is). A ref matching `^[0-9a-f]{7,40}$` is treated as a commit SHA and passed through unchanged.
 - **Hashing:** `shasum -a 256` (BSD/GNU compatible).
 - **Manifest/lock I/O:** `awk`, `grep -v`, `sort`. Writes go to a tempfile and are committed with atomic `mv`.
 - **`modules.just` generation:** `awk '{print "mod? " $1 " \"" $1 ".just\""}'` over the lock (paths are relative to `modules.just`'s directory, not the project root).
@@ -169,7 +175,6 @@ The test harness is itself a justfile (`tests/justfile`) — we dogfood `just` t
 - Transitive dependencies declared by modules.
 - Multiple modules per source repo.
 - Self-update for `plug.just` itself (`plug update-self`).
-- Private repos / authentication. (HTTPS public only; user's git config and `.netrc` may make private repos accidentally work, but it's not designed for or tested.)
 - Caching between projects. Each project re-fetches.
 
 These are all reasonable v2 additions that the v1 design does not preclude.

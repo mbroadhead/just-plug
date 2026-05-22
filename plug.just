@@ -12,33 +12,82 @@ _paths:
     @echo "PLUGDIR={{justfile_directory()}}/just-plug"
     @echo "MODSFILE={{justfile_directory()}}/just-plug/modules.just"
 
-# Parse a source identifier of the form github.com/<owner>/<repo>[@<ref>].
-# Outputs three space-separated fields on stdout: <name> <source> <ref>.
+# Parse a source identifier. Accepted forms (each may have an optional @<ref> suffix):
+#   github.com/<owner>/<repo>            (bare — fetched via raw.githubusercontent.com)
+#   https://<host>/<path>/<repo>[.git]   (HTTPS URL — fetched via git)
+#   <user>@<host>:<path>/<repo>[.git]    (SSH URL — fetched via git)
+#   file:///<path>/<repo>[.git]          (file URL — fetched via git, mainly for tests)
+#
+# Output (stdout): "<name> <source> <ref>" — three space-separated fields.
+# `source` is the form as typed, with trailing .git and trailing / stripped.
 # Exits non-zero on invalid input.
 _parse-source spec:
     #!/usr/bin/env bash
     set -euo pipefail
     spec='{{spec}}'
 
-    # Split off ref.
-    if [[ "$spec" == *"@"* ]]; then
-        ref="${spec##*@}"
-        source="${spec%@*}"
+    if [[ "$spec" =~ ^https:// ]] || [[ "$spec" =~ ^file:// ]]; then
+        # HTTPS/file URL form: <scheme>://<authority>/<path>[@<ref>]
+        scheme="${spec%%://*}://"
+        rest="${spec#*://}"
+        if [[ "$rest" != */* ]]; then
+            echo "error: URL must have a path component: $spec" >&2
+            exit 1
+        fi
+        authority="${rest%%/*}"
+        path_part="${rest#*/}"
+        # Split @<ref> from the path only — preserves any @ in userinfo (authority).
+        if [[ "$path_part" == *"@"* ]]; then
+            ref="${path_part##*@}"
+            path_part="${path_part%@*}"
+        else
+            ref="main"
+        fi
+        # Strip trailing .git and trailing /.
+        path_part="${path_part%.git}"
+        path_part="${path_part%/}"
+        if [ -z "$path_part" ] || [[ "$path_part" != */* ]]; then
+            echo "error: URL must have an owner/repo path: $spec" >&2
+            exit 1
+        fi
+        source="${scheme}${authority}/${path_part}"
+        repo="${path_part##*/}"
+    elif [[ "$spec" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+: ]]; then
+        # SSH URL form: <user>@<host>:<path>[@<ref>]
+        userhost="${spec%%:*}"
+        path_part="${spec#*:}"
+        if [[ "$path_part" == *"@"* ]]; then
+            ref="${path_part##*@}"
+            path_part="${path_part%@*}"
+        else
+            ref="main"
+        fi
+        path_part="${path_part%.git}"
+        path_part="${path_part%/}"
+        if [ -z "$path_part" ] || [[ "$path_part" != */* ]]; then
+            echo "error: SSH URL must have an owner/repo path: $spec" >&2
+            exit 1
+        fi
+        source="${userhost}:${path_part}"
+        repo="${path_part##*/}"
     else
-        ref="main"
-        source="$spec"
-    fi
-
-    # Validate: must be github.com/<owner>/<repo> with no extra path components.
-    if [[ ! "$source" =~ ^github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
-        echo "error: source must look like 'github.com/<owner>/<repo>', got: $source" >&2
-        exit 1
+        # Bare form: github.com/<owner>/<repo>[@<ref>]
+        if [[ "$spec" == *"@"* ]]; then
+            ref="${spec##*@}"
+            source="${spec%@*}"
+        else
+            ref="main"
+            source="$spec"
+        fi
+        if [[ ! "$source" =~ ^github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+            echo "error: source must look like 'github.com/<owner>/<repo>', got: $source" >&2
+            exit 1
+        fi
+        repo="${source##*/}"
     fi
 
     # Derive name: repo basename minus leading 'just-'.
-    repo="${source##*/}"
     name="${repo#just-}"
-
     if [ -z "$name" ]; then
         echo "error: derived module name is empty for source $source" >&2
         exit 1
@@ -46,10 +95,25 @@ _parse-source spec:
 
     echo "$name $source $ref"
 
+# Map a stored source string to a URL git can use.
+# Bare form: prepend $JUST_PLUG_GIT_BASE (defaults to https://github.com).
+# URL forms (https://, file://, ssh): returned as-is.
+_source-to-url source:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source='{{source}}'
+    if [[ "$source" =~ ^https:// ]] || [[ "$source" =~ ^file:// ]] || [[ "$source" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+: ]]; then
+        echo "$source"
+    else
+        base="${JUST_PLUG_GIT_BASE:-https://github.com}"
+        repo_path="${source#github.com/}"
+        echo "$base/$repo_path"
+    fi
+
 # Resolve a ref to a 40-char commit SHA.
-# Args: <source> <ref>
+# Args: <source> <ref>  (source is the full form as stored in deps/lock)
 # - If <ref> matches ^[0-9a-f]{7,40}$, pass through unchanged.
-# - Otherwise, git ls-remote against $JUST_PLUG_GIT_BASE/<source>.
+# - Otherwise, git ls-remote against the URL derived from <source>.
 _resolve-ref source ref:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -61,8 +125,7 @@ _resolve-ref source ref:
         exit 0
     fi
 
-    base="${JUST_PLUG_GIT_BASE:-https://github.com}"
-    url="$base/$source"
+    url="$(just --justfile '{{justfile()}}' plug _source-to-url "$source")"
 
     # Try tag first, then branch. ls-remote prints lines like "<sha>\t<full-ref>".
     sha="$(git ls-remote "$url" "refs/tags/$ref" 2>/dev/null | awk 'NR==1{print $1}')"
@@ -80,6 +143,9 @@ _resolve-ref source ref:
 # Fetch <filename> at <sha> from <source> to <dest>.
 # Writes via tempfile + atomic mv; on failure, <dest> is untouched.
 # Outputs the sha256 of the fetched content on success.
+#
+# Bare github.com/<owner>/<repo> sources go through raw.githubusercontent.com.
+# URL-form sources go through git: shallow init, fetch --depth 1 <sha>, cat-file.
 _fetch source sha filename dest:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -88,17 +154,33 @@ _fetch source sha filename dest:
     filename='{{filename}}'
     dest='{{dest}}'
 
-    base="${JUST_PLUG_RAW_BASE:-https://raw.githubusercontent.com}"
-    # source is "github.com/<owner>/<repo>"; strip the "github.com/" prefix for the raw URL.
-    repo_path="${source#github.com/}"
-    url="$base/$repo_path/$sha/$filename"
-
     tmp="$(mktemp "${dest}.XXXXXX")"
     trap 'rm -f "$tmp"' EXIT
 
-    if ! curl -fsSL --max-time 60 -o "$tmp" "$url"; then
-        echo "error: fetch failed: $url" >&2
-        exit 1
+    if [[ "$source" =~ ^https:// ]] || [[ "$source" =~ ^file:// ]] || [[ "$source" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+: ]]; then
+        # URL form: shallow git fetch by SHA, extract one file.
+        url="$(just --justfile '{{justfile()}}' plug _source-to-url "$source")"
+        work="$(mktemp -d)"
+        trap 'rm -f "$tmp"; rm -rf "$work"' EXIT
+        git -C "$work" init -q
+        git -C "$work" remote add origin "$url"
+        if ! git -C "$work" fetch --depth 1 -q origin "$sha"; then
+            echo "error: git fetch failed: $url @ $sha" >&2
+            exit 1
+        fi
+        if ! git -C "$work" cat-file -p "$sha:$filename" > "$tmp"; then
+            echo "error: $filename not found at $sha in $url" >&2
+            exit 1
+        fi
+    else
+        # Bare github.com form: raw HTTP fetch.
+        base="${JUST_PLUG_RAW_BASE:-https://raw.githubusercontent.com}"
+        repo_path="${source#github.com/}"
+        url="$base/$repo_path/$sha/$filename"
+        if ! curl -fsSL --max-time 60 -o "$tmp" "$url"; then
+            echo "error: fetch failed: $url" >&2
+            exit 1
+        fi
     fi
 
     hash="$(shasum -a 256 < "$tmp" | awk '{print $1}')"
@@ -222,9 +304,7 @@ install spec="":
                 sha="$(echo "$locked_line" | awk '{print $4}')"
                 hash_recorded="$(echo "$locked_line" | awk '{print $5}')"
             else
-                # _resolve-ref expects "<owner>/<repo>", not "github.com/<owner>/<repo>".
-                repo_path="${source#github.com/}"
-                sha="$(just --justfile "$jf" plug _resolve-ref "$repo_path" "$ref")"
+                sha="$(just --justfile "$jf" plug _resolve-ref "$source" "$ref")"
                 hash_recorded=""
             fi
             # If file already present and lock has hash, only re-fetch when missing.
@@ -248,20 +328,62 @@ install spec="":
         exit 0
     fi
 
-    # Single-install mode (existing behavior).
+    # Single-install mode.
     # Parse inline (mirrors _parse-source logic) to avoid sub-just cwd issues.
-    if [[ "$spec" == *"@"* ]]; then
-        ref="${spec##*@}"
-        source="${spec%@*}"
+    if [[ "$spec" =~ ^https:// ]] || [[ "$spec" =~ ^file:// ]]; then
+        scheme="${spec%%://*}://"
+        rest="${spec#*://}"
+        if [[ "$rest" != */* ]]; then
+            echo "error: URL must have a path component: $spec" >&2
+            exit 1
+        fi
+        authority="${rest%%/*}"
+        path_part="${rest#*/}"
+        if [[ "$path_part" == *"@"* ]]; then
+            ref="${path_part##*@}"
+            path_part="${path_part%@*}"
+        else
+            ref="main"
+        fi
+        path_part="${path_part%.git}"
+        path_part="${path_part%/}"
+        if [ -z "$path_part" ] || [[ "$path_part" != */* ]]; then
+            echo "error: URL must have an owner/repo path: $spec" >&2
+            exit 1
+        fi
+        source="${scheme}${authority}/${path_part}"
+        repo="${path_part##*/}"
+    elif [[ "$spec" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+: ]]; then
+        userhost="${spec%%:*}"
+        path_part="${spec#*:}"
+        if [[ "$path_part" == *"@"* ]]; then
+            ref="${path_part##*@}"
+            path_part="${path_part%@*}"
+        else
+            ref="main"
+        fi
+        path_part="${path_part%.git}"
+        path_part="${path_part%/}"
+        if [ -z "$path_part" ] || [[ "$path_part" != */* ]]; then
+            echo "error: SSH URL must have an owner/repo path: $spec" >&2
+            exit 1
+        fi
+        source="${userhost}:${path_part}"
+        repo="${path_part##*/}"
     else
-        ref="main"
-        source="$spec"
+        if [[ "$spec" == *"@"* ]]; then
+            ref="${spec##*@}"
+            source="${spec%@*}"
+        else
+            ref="main"
+            source="$spec"
+        fi
+        if [[ ! "$source" =~ ^github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+            echo "error: source must look like 'github.com/<owner>/<repo>', got: $source" >&2
+            exit 1
+        fi
+        repo="${source##*/}"
     fi
-    if [[ ! "$source" =~ ^github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
-        echo "error: source must look like 'github.com/<owner>/<repo>', got: $source" >&2
-        exit 1
-    fi
-    repo="${source##*/}"
     name="${repo#just-}"
     if [ -z "$name" ]; then
         echo "error: derived module name is empty for source $source" >&2
@@ -279,9 +401,7 @@ install spec="":
     fi
 
     # Resolve ref → SHA.
-    # _resolve-ref expects "<owner>/<repo>", not "github.com/<owner>/<repo>".
-    repo_path="${source#github.com/}"
-    sha="$(just --justfile "$jf" plug _resolve-ref "$repo_path" "$ref")"
+    sha="$(just --justfile "$jf" plug _resolve-ref "$source" "$ref")"
 
     # Fetch into just-plug/<name>.just (atomic).
     mkdir -p "$root/just-plug"
@@ -340,8 +460,7 @@ update name="":
     update_one() {
         local n="$1" src="$2" ref="$3"
         local new_sha old_sha old_hash new_hash
-        local repo_path="${src#github.com/}"
-        new_sha="$(just --justfile "$jf" plug _resolve-ref "$repo_path" "$ref")"
+        new_sha="$(just --justfile "$jf" plug _resolve-ref "$src" "$ref")"
         old_sha="$(awk -v n="$n" '$1==n {print $4}' "$root/just-plug.lock" 2>/dev/null || true)"
         old_hash="$(awk -v n="$n" '$1==n {print $5}' "$root/just-plug.lock" 2>/dev/null || true)"
         if [ "$new_sha" = "$old_sha" ] && [ -f "$root/just-plug/$n.just" ]; then
@@ -401,15 +520,13 @@ outdated:
     set -euo pipefail
     jf='{{justfile()}}'
     found=0
-    base="${JUST_PLUG_GIT_BASE:-https://github.com}"
     while read -r name source ref locked_sha hash; do
         [ -z "$name" ] && continue
         # SHA pin: never outdated.
         if [[ "$ref" =~ ^[0-9a-f]{7,40}$ ]]; then
             continue
         fi
-        repo_path="${source#github.com/}"
-        url="$base/$repo_path"
+        url="$(just --justfile "$jf" plug _source-to-url "$source")"
         # Try tag.
         sha="$(git ls-remote "$url" "refs/tags/$ref" 2>/dev/null | awk 'NR==1{print $1}')"
         if [ -n "$sha" ]; then

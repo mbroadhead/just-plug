@@ -27,6 +27,10 @@ just plug install github.com/foo/just-docker@v1.2.0
 just plug install github.com/foo/just-docker@develop
 just plug install github.com/foo/just-docker@abc1234
 
+# URL forms — useful for paste-from-`git remote -v` and required for private repos.
+just plug install https://github.com/foo/just-docker.git
+just plug install git@github.com:foo/just-docker.git@v1.2.0
+
 # Remove a module.
 just plug remove docker
 
@@ -85,7 +89,7 @@ A CI workflow checks the module parses on every push; the release workflow creat
 
 ## Limitations (v1)
 
-- GitHub-only. No GitLab/Codeberg/raw URLs.
+- GitHub-only for the bare `github.com/owner/repo` form. URL forms (HTTPS and SSH) work for any host `git` understands, but only GitHub is exercised in tests.
 - One module per repo.
 - No transitive dependencies.
 - No semver ranges — pin to a tag, branch, or SHA.
