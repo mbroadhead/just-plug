@@ -143,6 +143,9 @@ _resolve-ref source ref:
 # Fetch <filename> at <sha> from <source> to <dest>.
 # Writes via tempfile + atomic mv; on failure, <dest> is untouched.
 # Outputs the sha256 of the fetched content on success.
+#
+# Bare github.com/<owner>/<repo> sources go through raw.githubusercontent.com.
+# URL-form sources go through git: shallow init, fetch --depth 1 <sha>, cat-file.
 _fetch source sha filename dest:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -151,17 +154,33 @@ _fetch source sha filename dest:
     filename='{{filename}}'
     dest='{{dest}}'
 
-    base="${JUST_PLUG_RAW_BASE:-https://raw.githubusercontent.com}"
-    # source is "github.com/<owner>/<repo>"; strip the "github.com/" prefix for the raw URL.
-    repo_path="${source#github.com/}"
-    url="$base/$repo_path/$sha/$filename"
-
     tmp="$(mktemp "${dest}.XXXXXX")"
     trap 'rm -f "$tmp"' EXIT
 
-    if ! curl -fsSL --max-time 60 -o "$tmp" "$url"; then
-        echo "error: fetch failed: $url" >&2
-        exit 1
+    if [[ "$source" =~ ^https:// ]] || [[ "$source" =~ ^file:// ]] || [[ "$source" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+: ]]; then
+        # URL form: shallow git fetch by SHA, extract one file.
+        url="$(just --justfile '{{justfile()}}' plug _source-to-url "$source")"
+        work="$(mktemp -d)"
+        trap 'rm -f "$tmp"; rm -rf "$work"' EXIT
+        git -C "$work" init -q
+        git -C "$work" remote add origin "$url"
+        if ! git -C "$work" fetch --depth 1 -q origin "$sha"; then
+            echo "error: git fetch failed: $url @ $sha" >&2
+            exit 1
+        fi
+        if ! git -C "$work" cat-file -p "$sha:$filename" > "$tmp"; then
+            echo "error: $filename not found at $sha in $url" >&2
+            exit 1
+        fi
+    else
+        # Bare github.com form: raw HTTP fetch.
+        base="${JUST_PLUG_RAW_BASE:-https://raw.githubusercontent.com}"
+        repo_path="${source#github.com/}"
+        url="$base/$repo_path/$sha/$filename"
+        if ! curl -fsSL --max-time 60 -o "$tmp" "$url"; then
+            echo "error: fetch failed: $url" >&2
+            exit 1
+        fi
     fi
 
     hash="$(shasum -a 256 < "$tmp" | awk '{print $1}')"
