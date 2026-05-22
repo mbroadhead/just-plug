@@ -111,9 +111,9 @@ _source-to-url source:
     fi
 
 # Resolve a ref to a 40-char commit SHA.
-# Args: <source> <ref>
+# Args: <source> <ref>  (source is the full form as stored in deps/lock)
 # - If <ref> matches ^[0-9a-f]{7,40}$, pass through unchanged.
-# - Otherwise, git ls-remote against $JUST_PLUG_GIT_BASE/<source>.
+# - Otherwise, git ls-remote against the URL derived from <source>.
 _resolve-ref source ref:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -125,8 +125,7 @@ _resolve-ref source ref:
         exit 0
     fi
 
-    base="${JUST_PLUG_GIT_BASE:-https://github.com}"
-    url="$base/$source"
+    url="$(just --justfile '{{justfile()}}' plug _source-to-url "$source")"
 
     # Try tag first, then branch. ls-remote prints lines like "<sha>\t<full-ref>".
     sha="$(git ls-remote "$url" "refs/tags/$ref" 2>/dev/null | awk 'NR==1{print $1}')"
@@ -286,9 +285,7 @@ install spec="":
                 sha="$(echo "$locked_line" | awk '{print $4}')"
                 hash_recorded="$(echo "$locked_line" | awk '{print $5}')"
             else
-                # _resolve-ref expects "<owner>/<repo>", not "github.com/<owner>/<repo>".
-                repo_path="${source#github.com/}"
-                sha="$(just --justfile "$jf" plug _resolve-ref "$repo_path" "$ref")"
+                sha="$(just --justfile "$jf" plug _resolve-ref "$source" "$ref")"
                 hash_recorded=""
             fi
             # If file already present and lock has hash, only re-fetch when missing.
@@ -343,9 +340,7 @@ install spec="":
     fi
 
     # Resolve ref → SHA.
-    # _resolve-ref expects "<owner>/<repo>", not "github.com/<owner>/<repo>".
-    repo_path="${source#github.com/}"
-    sha="$(just --justfile "$jf" plug _resolve-ref "$repo_path" "$ref")"
+    sha="$(just --justfile "$jf" plug _resolve-ref "$source" "$ref")"
 
     # Fetch into just-plug/<name>.just (atomic).
     mkdir -p "$root/just-plug"
@@ -404,8 +399,7 @@ update name="":
     update_one() {
         local n="$1" src="$2" ref="$3"
         local new_sha old_sha old_hash new_hash
-        local repo_path="${src#github.com/}"
-        new_sha="$(just --justfile "$jf" plug _resolve-ref "$repo_path" "$ref")"
+        new_sha="$(just --justfile "$jf" plug _resolve-ref "$src" "$ref")"
         old_sha="$(awk -v n="$n" '$1==n {print $4}' "$root/just-plug.lock" 2>/dev/null || true)"
         old_hash="$(awk -v n="$n" '$1==n {print $5}' "$root/just-plug.lock" 2>/dev/null || true)"
         if [ "$new_sha" = "$old_sha" ] && [ -f "$root/just-plug/$n.just" ]; then
