@@ -94,6 +94,46 @@ A CI workflow checks the module parses on every push; the release workflow creat
     └── ...
 ```
 
+These paths are rooted at the directory of your top-level justfile by default. Set [`JUST_PLUG_DIR`](#custom-artifact-location) to relocate them.
+
+## Custom artifact location
+
+By default, all just-plug artifacts (`just-plug.deps`, `just-plug.lock`, `just-plug/`) live next to your top-level justfile. Set `JUST_PLUG_DIR` in the environment to relocate them:
+
+| `JUST_PLUG_DIR` | Resolved location |
+|---|---|
+| unset / empty | next to your top-level justfile (default) |
+| absolute path | the path as-is |
+| relative path | resolved relative to your top-level justfile |
+
+Any mechanism that puts `JUST_PLUG_DIR` in the shell environment before `just` runs will work. A per-checkout tool like [mise](https://mise.jdx.dev/) is convenient:
+
+```toml
+# mise.local.toml (gitignored)
+[env]
+JUST_PLUG_DIR = ".local"
+```
+
+`direnv`, shell exports, and one-shot `JUST_PLUG_DIR=.local just plug install …` invocations work equivalently.
+
+Example: tucking everything into `.local/` and loading it from a private justfile:
+
+```
+<your project>/
+├── justfile                       # `import? '.local/justfile.private'`
+└── .local/
+    ├── justfile.private           # `mod? plug "just-plug/plug.just"`
+    │                              # `import? "just-plug/modules.just"`
+    ├── just-plug.deps
+    ├── just-plug.lock
+    └── just-plug/
+        ├── plug.just
+        ├── modules.just
+        └── ...
+```
+
+The `mod?`/`import?` paths inside `.local/justfile.private` stay relative to that file, so they reference `just-plug/...`, not `.local/just-plug/...`.
+
 ## Limitations (v1)
 
 - GitHub-only for the bare `github.com/owner/repo` form. URL forms (HTTPS and SSH) work for any host `git` understands, but only GitHub is exercised in tests.
