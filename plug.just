@@ -352,6 +352,12 @@ install spec="":
     #!/usr/bin/env bash
     set -euo pipefail
     root='{{justfile_directory()}}'
+    if [ -n "${JUST_PLUG_DIR:-}" ]; then
+        case "$JUST_PLUG_DIR" in
+            /*) root="$JUST_PLUG_DIR" ;;
+            *)  root="$root/$JUST_PLUG_DIR" ;;
+        esac
+    fi
     jf='{{justfile()}}'
 
     spec='{{spec}}'
@@ -487,6 +493,12 @@ remove name:
     #!/usr/bin/env bash
     set -euo pipefail
     root='{{justfile_directory()}}'
+    if [ -n "${JUST_PLUG_DIR:-}" ]; then
+        case "$JUST_PLUG_DIR" in
+            /*) root="$JUST_PLUG_DIR" ;;
+            *)  root="$root/$JUST_PLUG_DIR" ;;
+        esac
+    fi
     name='{{name}}'
     jf='{{justfile()}}'
     file="$root/just-plug/$name.just"
@@ -522,6 +534,12 @@ update name="":
     #!/usr/bin/env bash
     set -euo pipefail
     root='{{justfile_directory()}}'
+    if [ -n "${JUST_PLUG_DIR:-}" ]; then
+        case "$JUST_PLUG_DIR" in
+            /*) root="$JUST_PLUG_DIR" ;;
+            *)  root="$root/$JUST_PLUG_DIR" ;;
+        esac
+    fi
     name='{{name}}'
     jf='{{justfile()}}'
 
@@ -561,6 +579,12 @@ verify:
     #!/usr/bin/env bash
     set -euo pipefail
     root='{{justfile_directory()}}'
+    if [ -n "${JUST_PLUG_DIR:-}" ]; then
+        case "$JUST_PLUG_DIR" in
+            /*) root="$JUST_PLUG_DIR" ;;
+            *)  root="$root/$JUST_PLUG_DIR" ;;
+        esac
+    fi
     jf='{{justfile()}}'
     fail=0
     while read -r name source ref sha hash; do
@@ -632,6 +656,12 @@ self-update spec="":
     #!/usr/bin/env bash
     set -euo pipefail
     root='{{justfile_directory()}}'
+    if [ -n "${JUST_PLUG_DIR:-}" ]; then
+        case "$JUST_PLUG_DIR" in
+            /*) root="$JUST_PLUG_DIR" ;;
+            *)  root="$root/$JUST_PLUG_DIR" ;;
+        esac
+    fi
     jf='{{justfile()}}'
     spec='{{spec}}'
 
@@ -667,6 +697,12 @@ init:
     #!/usr/bin/env bash
     set -euo pipefail
     root='{{justfile_directory()}}'
+    if [ -n "${JUST_PLUG_DIR:-}" ]; then
+        case "$JUST_PLUG_DIR" in
+            /*) root="$JUST_PLUG_DIR" ;;
+            *)  root="$root/$JUST_PLUG_DIR" ;;
+        esac
+    fi
     mkdir -p "$root/just-plug"
     [ -f "$root/just-plug.deps" ] || : > "$root/just-plug.deps"
     printf '%s\n' \
