@@ -714,3 +714,6 @@ init:
         'Then install modules with:' \
         '' \
         '    just plug install github.com/<owner>/<repo>[@<ref>]'
+    if [ -n "${JUST_PLUG_DIR:-}" ]; then
+        printf '\n%s\n' "Note: artifacts installed in $root (paths above are relative to a justfile that sits alongside just-plug/)."
+    fi

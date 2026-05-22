@@ -25,7 +25,9 @@ cd "$PROJ"
 export JUST_PLUG_DIR="tools"
 
 # init places artifacts under tools/, not at project root.
-just plug init >/dev/null
+init_out="$(just plug init)"
+assert_contains "$init_out" "artifacts installed in" "init notes resolved root when JUST_PLUG_DIR set"
+assert_contains "$init_out" "/tools"                  "init note mentions the relocated dir"
 assert_file_exists "$PROJ/tools/just-plug"      "init created tools/just-plug dir"
 assert_file_exists "$PROJ/tools/just-plug.deps" "init created tools/just-plug.deps"
 assert_file_missing "$PROJ/just-plug"           "no just-plug dir at project root"
