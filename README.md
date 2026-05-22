@@ -21,6 +21,9 @@ Run `just plug init` to create the manifest file.
 ## Usage
 
 ```sh
+# List recipes (also runs with bare `just plug`).
+just plug help
+
 # Install a module from GitHub. Default ref is `main`.
 just plug install github.com/foo/just-docker
 just plug install github.com/foo/just-docker@v1.2.0

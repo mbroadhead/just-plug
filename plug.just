@@ -4,6 +4,16 @@
 # All recipes anchor paths to justfile_directory(), which resolves to the
 # user's project root (the directory containing the justfile that imported this module).
 
+# Print this help message and list just-plug recipes.
+help:
+    @just --justfile '{{justfile()}}' --list plug
+    @echo ''
+    @echo 'Docs: https://github.com/mbroadhead/just-plug#readme'
+
+# Default recipe — runs when `just plug` is invoked with no arguments.
+[private]
+default: help
+
 # Print plug-internal paths. Used by tests; harmless for users.
 _paths:
     @echo "ROOT={{justfile_directory()}}"
