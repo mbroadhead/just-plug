@@ -501,15 +501,13 @@ outdated:
     set -euo pipefail
     jf='{{justfile()}}'
     found=0
-    base="${JUST_PLUG_GIT_BASE:-https://github.com}"
     while read -r name source ref locked_sha hash; do
         [ -z "$name" ] && continue
         # SHA pin: never outdated.
         if [[ "$ref" =~ ^[0-9a-f]{7,40}$ ]]; then
             continue
         fi
-        repo_path="${source#github.com/}"
-        url="$base/$repo_path"
+        url="$(just --justfile "$jf" plug _source-to-url "$source")"
         # Try tag.
         sha="$(git ls-remote "$url" "refs/tags/$ref" 2>/dev/null | awk 'NR==1{print $1}')"
         if [ -n "$sha" ]; then
