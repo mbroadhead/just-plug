@@ -46,6 +46,21 @@ _parse-source spec:
 
     echo "$name $source $ref"
 
+# Map a stored source string to a URL git can use.
+# Bare form: prepend $JUST_PLUG_GIT_BASE (defaults to https://github.com).
+# URL forms (https://, file://, ssh): returned as-is.
+_source-to-url source:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source='{{source}}'
+    if [[ "$source" =~ ^https:// ]] || [[ "$source" =~ ^file:// ]] || [[ "$source" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+: ]]; then
+        echo "$source"
+    else
+        base="${JUST_PLUG_GIT_BASE:-https://github.com}"
+        repo_path="${source#github.com/}"
+        echo "$base/$repo_path"
+    fi
+
 # Resolve a ref to a 40-char commit SHA.
 # Args: <source> <ref>
 # - If <ref> matches ^[0-9a-f]{7,40}$, pass through unchanged.
