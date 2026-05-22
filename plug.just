@@ -569,7 +569,7 @@ outdated:
     fi
 
 # Update just-plug itself. Defaults to github.com/mbroadhead/just-plug@main.
-# Accepts the same spec forms as `install`, plus a bare `@<ref>` shorthand.
+# Usage: just plug self-update [<spec>|@<ref>]
 self-update spec="":
     #!/usr/bin/env bash
     set -euo pipefail
