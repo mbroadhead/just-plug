@@ -78,6 +78,10 @@ fixture_add_module() {
         git clone -q --bare . "$bare"
     )
 
+    # Allow `git fetch --depth 1 origin <sha>` against the bare repo (mirrors
+    # GitHub's platform-wide uploadpack.allowReachableSHA1InWant default).
+    git -C "$bare" config uploadpack.allowAnySHA1InWant true
+
     # Mirror file content for HTTP fetch keyed by the resolved SHA.
     local sha
     sha="$(git -C "$bare" rev-parse "$ref")"
