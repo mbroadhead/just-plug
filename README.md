@@ -58,6 +58,17 @@ The local module name is derived from the repo basename, with a leading `just-` 
 
 To publish a module: drop a single `.just` file named `<module-name>.just` at the root of a public GitHub repo. Conventionally, name the repo `just-<module-name>`.
 
+## Publishing a module
+
+Start from [just-plug-template](https://github.com/mbroadhead/just-plug-template):
+
+1. Click **Use this template** on the template repo (or `gh repo create --template mbroadhead/just-plug-template`).
+2. Clone your new repo and run `bash scripts/init.sh` — it prompts for the module name, replaces placeholders, renames the sample `MODULE.just`, and removes itself.
+3. Edit the renamed `<module-name>.just` to write your real recipes.
+4. Commit, push, and tag a release: `git tag v0.1.0 && git push --tags`.
+
+A CI workflow checks the module parses on every push; the release workflow creates a GitHub Release on every `v*` tag so versioned installs (`...@v0.1.0`) stay discoverable.
+
 ## File layout
 
 ```
