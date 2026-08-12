@@ -361,8 +361,8 @@ _gen-modules:
     mv "$tmp" "$out"
 
 # Install a single module, or (no args) reconcile state against just-plug.deps.
-# Usage: just plug install [github.com/<owner>/<repo>[@<ref>]]
-install spec="":
+# Usage: just plug install [github.com/<owner>/<repo>[@<ref>]] [--as <name>]
+install spec="" *flags:
     #!/usr/bin/env bash
     set -euo pipefail
     root='{{justfile_directory()}}'
@@ -375,6 +375,34 @@ install spec="":
     jf='{{justfile()}}'
 
     spec='{{spec}}'
+
+    # --as <name> overrides the module name derived from the repo basename.
+    alias=""
+    set -- {{flags}}
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --as)
+                shift
+                if [ $# -eq 0 ]; then
+                    echo "error: --as requires a module name" >&2
+                    exit 1
+                fi
+                alias="$1"
+                ;;
+            --as=*) alias="${1#--as=}" ;;
+            *)
+                echo "error: unknown option: $1" >&2
+                echo "       usage: just plug install [<source>[@<ref>]] [--as <name>]" >&2
+                exit 1
+                ;;
+        esac
+        shift
+    done
+
+    if [ -z "$spec" ] && [ -n "$alias" ]; then
+        echo "error: --as requires a source to install" >&2
+        exit 1
+    fi
 
     if [ -z "$spec" ]; then
         # Reconcile mode.
@@ -473,9 +501,19 @@ install spec="":
         fi
         repo="${source##*/}"
     fi
-    name="${repo#just-}"
+    name="${alias:-${repo#just-}}"
     if [ -z "$name" ]; then
         echo "error: derived module name is empty for source $source" >&2
+        exit 1
+    fi
+
+    # The name becomes a `mod` identifier in the user's justfile, so it has to
+    # be a legal one — a repo like just-my.thing derives a name that is not.
+    if [[ ! "$name" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]; then
+        echo "error: '$name' is not a valid module name" >&2
+        echo "       names must match [a-zA-Z_][a-zA-Z0-9_-]*" >&2
+        echo "       install it under a different name:" >&2
+        echo "           just plug install $spec --as <name>" >&2
         exit 1
     fi
 
@@ -484,7 +522,9 @@ install spec="":
         existing_src="$(awk -v n="$name" '$1 == n {print $2}' "$root/just-plug.lock")"
         if [ -n "$existing_src" ] && [ "$existing_src" != "$source" ]; then
             echo "error: module '$name' is already installed from $existing_src" >&2
-            echo "       remove it first with: just plug remove $name" >&2
+            echo "       install this one under a different name:" >&2
+            echo "           just plug install $spec --as <name>" >&2
+            echo "       or remove the other first with: just plug remove $name" >&2
             exit 1
         fi
     fi
@@ -492,9 +532,10 @@ install spec="":
     # Resolve ref → SHA.
     sha="$(just --justfile "$jf" plug _resolve-ref "$source" "$ref")"
 
-    # Fetch into just-plug/<name>.just (atomic).
+    # Fetch the repo's entry file into just-plug/<name>.just (atomic).
     mkdir -p "$root/just-plug"
-    hash="$(just --justfile "$jf" plug _fetch "$source" "$sha" "$name.just" "$root/just-plug/$name.just")"
+    entry="$(just --justfile "$jf" plug _entry-file "$source")"
+    hash="$(just --justfile "$jf" plug _fetch "$source" "$sha" "$entry" "$root/just-plug/$name.just")"
 
     # Update state.
     just --justfile "$jf" plug _upsert-dep "$name" "$source" "$ref"
