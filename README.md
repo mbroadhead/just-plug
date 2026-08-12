@@ -34,6 +34,9 @@ just plug install github.com/foo/just-docker@abc1234
 just plug install https://github.com/foo/just-docker.git
 just plug install git@github.com:foo/just-docker.git@v1.2.0
 
+# Install under a name of your choosing (see Module naming).
+just plug install github.com/foo/just-docker --as containers
+
 # Remove a module.
 just plug remove docker
 
@@ -68,6 +71,34 @@ The local module name is derived from the repo basename, with a leading `just-` 
 | `github.com/foo/docker` | `docker` | `just-plug/docker.just` |
 
 To publish a module: drop a single `.just` file named `<module-name>.just` at the root of a public GitHub repo. Conventionally, name the repo `just-<module-name>`.
+
+### Choosing a different name
+
+Module names and recipe names share one namespace. If a module's derived name is already a recipe in your justfile, `just` refuses to parse the file at all — every recipe in the project stops working, not just that module:
+
+```
+error: Module `docker` defined on line 1 is redefined as a recipe on line 74
+```
+
+`install` checks for this and refuses rather than letting it happen. Install under a different name with `--as`:
+
+```sh
+just plug install github.com/foo/just-docker --as containers
+```
+
+The name you pick is the name everything else uses — `just containers <recipe>`, `just plug update containers`, `just plug remove containers` — and it is what lands in `just-plug.deps`, `just-plug.lock`, and `just-plug/containers.just`. The file fetched from the repo is unaffected.
+
+`--as` is also the answer when two modules derive the same name (`foo/just-docker` and `bar/just-docker`), or when a repo name is not a legal `just` identifier (`just-my.thing`).
+
+### Recovering from a conflict
+
+If a conflict already exists — usually because a recipe was added to the justfile *after* the module was installed — then `just plug remove` cannot run either, since it also has to parse the broken justfile. Run `plug.just` directly instead:
+
+```sh
+JUST_PLUG_DIR=.. just -f just-plug/plug.just remove <name>
+```
+
+`-f` parses `plug.just` alone, so the conflicting `mod` line is never read, and `JUST_PLUG_DIR=..` points the artifact paths back at your project root. Reinstall with `--as` afterwards.
 
 ## Publishing a module
 
