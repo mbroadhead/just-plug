@@ -2,6 +2,11 @@
 
 set -euo pipefail
 
+# An ambient JUST_PLUG_DIR from the developer's shell relocates every artifact
+# and fails the whole suite. Tests that exercise it export it themselves, after
+# sourcing this file.
+unset JUST_PLUG_DIR
+
 # Track test results.
 ASSERT_OK=0
 ASSERT_FAIL=0
