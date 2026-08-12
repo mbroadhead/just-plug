@@ -129,6 +129,33 @@ _source-to-url source:
         echo "$base/$repo_path"
     fi
 
+# Report whether <name> is already taken in the user's justfile. A module name
+# and a recipe name share one namespace, and an overlap is fatal to the entire
+# justfile — including the `plug` module, so just-plug cannot undo it afterwards.
+#
+# Prints one of:
+#   recipe   — a recipe (public, private, or an alias) already has this name
+#   module   — a module already has this name
+#   free     — the name is available
+#   unknown  — the justfile does not currently parse, so nothing can be probed
+#
+# `--show` is used for recipes rather than `--summary` because `--summary` hides
+# private recipes, which collide just as fatally.
+_name-status name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    jf='{{justfile()}}'
+    name='{{name}}'
+    if ! just --justfile "$jf" --summary >/dev/null 2>&1; then
+        echo unknown
+    elif just --justfile "$jf" --show "$name" >/dev/null 2>&1; then
+        echo recipe
+    elif just --justfile "$jf" --list "$name" >/dev/null 2>&1; then
+        echo module
+    else
+        echo free
+    fi
+
 # Print the entry filename a source publishes: the repo basename, minus a
 # leading `just-`, plus `.just`. This is the name of the file inside the repo,
 # which is fixed by the publisher — unlike the local module name, which `install
@@ -379,6 +406,11 @@ install spec="" *flags:
     # --as <name> overrides the module name derived from the repo basename.
     alias=""
     set -- {{flags}}
+    # `install --as x` binds --as to the spec parameter positionally; hand it
+    # back to the option parser so the error names --as rather than its argument.
+    case "$spec" in
+        -*) set -- "$spec" "$@"; spec="" ;;
+    esac
     while [ $# -gt 0 ]; do
         case "$1" in
             --as)
@@ -518,6 +550,7 @@ install spec="" *flags:
     fi
 
     # Collision check: same name, different source already installed?
+    existing_src=""
     if [ -f "$root/just-plug.lock" ]; then
         existing_src="$(awk -v n="$name" '$1 == n {print $2}' "$root/just-plug.lock")"
         if [ -n "$existing_src" ] && [ "$existing_src" != "$source" ]; then
@@ -529,6 +562,26 @@ install spec="" *flags:
         fi
     fi
 
+    # Namespace check: would this name collide with something already in the
+    # user's justfile? Skipped when we are re-installing our own module, whose
+    # name is already in modules.just and would report as a collision.
+    name_status=skipped
+    if [ "$existing_src" != "$source" ]; then
+        name_status="$(just --justfile "$jf" plug _name-status "$name")"
+    fi
+    case "$name_status" in
+        recipe|module)
+            echo "error: '$name' is already a $name_status in your justfile" >&2
+            echo "       installing it would leave the whole justfile unparseable" >&2
+            echo "       install it under a different name:" >&2
+            echo "           just plug install $spec --as <name>" >&2
+            exit 1
+            ;;
+        unknown)
+            echo "warning: your justfile does not parse, so '$name' was not checked for conflicts" >&2
+            ;;
+    esac
+
     # Resolve ref → SHA.
     sha="$(just --justfile "$jf" plug _resolve-ref "$source" "$ref")"
 
@@ -537,10 +590,37 @@ install spec="" *flags:
     entry="$(just --justfile "$jf" plug _entry-file "$source")"
     hash="$(just --justfile "$jf" plug _fetch "$source" "$sha" "$entry" "$root/just-plug/$name.just")"
 
+    # Back up what the install is about to mutate. Rollback has to be plain cp:
+    # _remove-dep and _gen-modules are sub-`just` calls, and none of them can run
+    # once the justfile has stopped parsing.
+    backup="$(mktemp -d)"
+    trap 'rm -rf "$backup"' EXIT
+    for f in just-plug.deps just-plug.lock just-plug/modules.just; do
+        if [ -f "$root/$f" ]; then
+            mkdir -p "$backup/$(dirname "$f")"
+            cp "$root/$f" "$backup/$f"
+        fi
+    done
+
     # Update state.
     just --justfile "$jf" plug _upsert-dep "$name" "$source" "$ref"
     just --justfile "$jf" plug _upsert-lock "$name" "$source" "$ref" "$sha" "$hash"
     just --justfile "$jf" plug _gen-modules
+
+    # Backstop for whatever the checks above did not anticipate: the justfile
+    # parsed before this install, so if it does not now, this install is why.
+    if [ "$name_status" = "free" ] && ! just --justfile "$jf" --summary >/dev/null 2>&1; then
+        parse_error="$(just --justfile "$jf" --summary 2>&1 || true)"
+        rm -f "$root/just-plug/$name.just"
+        for f in just-plug.deps just-plug.lock just-plug/modules.just; do
+            if [ -f "$backup/$f" ]; then cp "$backup/$f" "$root/$f"; else rm -f "$root/$f"; fi
+        done
+        echo "error: installing '$name' left your justfile unparseable; rolled back" >&2
+        echo "$parse_error" >&2
+        echo "       install it under a different name:" >&2
+        echo "           just plug install $spec --as <name>" >&2
+        exit 1
+    fi
 
     echo "installed $name @ $ref ($sha)"
 

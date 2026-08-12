@@ -15,6 +15,8 @@ CONTENT='run:
 '
 fixture_add_module "demo/just-doit"     "doit.just"      "v1.0.0" "$CONTENT"
 fixture_add_module "demo/just-my.thing" "my.thing.just"  "v1.0.0" "$CONTENT"
+fixture_add_module "demo/just-broken"   "broken.just"    "v1.0.0" 'this is (not ]] valid just
+'
 
 # A project with a `doit` recipe of its own. Installing demo/just-doit here
 # would derive the module name `doit` and make the whole justfile unparseable.
@@ -40,7 +42,8 @@ out="$(just plug install github.com/demo/just-doit 2>&1 || true)"
 assert_contains "$out" "--as" "collision error suggests --as"
 assert_file_missing "$PROJ/just-plug/doit.just" "collision leaves no module file"
 assert_eq "" "$(awk '$1 == "doit"' just-plug.deps)" "collision leaves no deps entry"
-assert_eq "" "$(awk '$1 == "doit"' just-plug.lock)" "collision leaves no lock entry"
+# init writes just-plug.deps but not the lockfile, so tolerate its absence here.
+assert_eq "" "$(awk '$1 == "doit"' just-plug.lock 2>/dev/null || true)" "collision leaves no lock entry"
 
 # A private recipe shadows just as fatally, and `just --summary` hides it.
 out="$(just plug install github.com/demo/just-doit --as hidden 2>&1 || true)"
@@ -93,8 +96,29 @@ fi
 out="$(just plug install --as tasks 2>&1 || true)"
 assert_contains "$out" "requires a source" "--as without a spec is an error"
 
-# --- Installing the same name from a different source still refuses, now with --as.
+# --- A module that is itself unparseable breaks the justfile in a way no name
+# check can predict, so the install rolls itself back.
+out="$(just plug install github.com/demo/just-broken 2>&1 || true)"
+assert_contains "$out" "rolled back" "unparseable module is rolled back"
+assert_file_missing "$PROJ/just-plug/broken.just" "rollback deletes the module file"
+assert_eq "" "$(awk '$1 == "broken"' just-plug.deps)" "rollback clears the deps entry"
+assert_eq "" "$(awk '$1 == "broken"' just-plug.lock)" "rollback clears the lock entry"
+assert_eq "" "$(grep 'broken' just-plug/modules.just || true)" "rollback clears the modules.just entry"
+assert_contains "$(just --summary)" "doit" "justfile parses again after rollback"
+
+# --- Re-installing an already-installed module at a new ref is not a collision
+# with itself, even though its name is in modules.just by then.
 just plug install github.com/demo/just-doit@v1.0.0 --as tasks >/dev/null
+fixture_add_module "demo/just-doit" "doit.just" "v2.0.0" 'run:
+    @echo "module doit v2"
+'
+just plug install github.com/demo/just-doit@v2.0.0 --as tasks >/dev/null
+assert_contains "$(cat just-plug.deps)" "tasks github.com/demo/just-doit v2.0.0" "re-pin to a new ref works"
+just plug remove tasks >/dev/null
+
+# --- Installing the same name from a different source still refuses, now with --as.
+# (v2.0.0: re-adding the fixture above rebuilt the repo, dropping the v1.0.0 tag.)
+just plug install github.com/demo/just-doit@v2.0.0 --as tasks >/dev/null
 fixture_add_module "rival/just-doit" "doit.just" "v1.0.0" "$CONTENT"
 out="$(just plug install github.com/rival/just-doit --as tasks 2>&1 || true)"
 assert_contains "$out" "--as" "different-source collision suggests --as"
