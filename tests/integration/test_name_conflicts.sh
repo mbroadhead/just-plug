@@ -123,5 +123,29 @@ fixture_add_module "rival/just-doit" "doit.just" "v1.0.0" "$CONTENT"
 out="$(just plug install github.com/rival/just-doit --as tasks 2>&1 || true)"
 assert_contains "$out" "--as" "different-source collision suggests --as"
 assert_contains "$(cat just-plug.lock)" "github.com/demo/just-doit" "original install untouched"
+just plug remove tasks >/dev/null
+
+# --- Rescue: nothing stops a user adding a recipe that shadows a module they
+# already installed. That breaks every just command in the project, `just plug
+# remove` included, so plug.just has to be runnable on its own. Appending to the
+# justfile is destructive to the cases above — keep this block last.
+just plug install github.com/demo/just-doit@v2.0.0 --as shadowed >/dev/null
+cat >> justfile <<'EOF'
+
+shadowed:
+    @echo "added later"
+EOF
+if just --summary >/dev/null 2>&1; then
+    ASSERT_FAIL=$((ASSERT_FAIL + 1))
+    echo "FAIL: a shadowed module should break the justfile"
+else
+    ASSERT_OK=$((ASSERT_OK + 1))
+fi
+
+JUST_PLUG_DIR="$PROJ" just -f "$PLUG" remove shadowed >/dev/null
+assert_file_missing "$PROJ/just-plug/shadowed.just" "rescue removes the module file"
+assert_eq "" "$(awk '$1 == "shadowed"' just-plug.deps)" "rescue clears the deps entry"
+assert_eq "" "$(awk '$1 == "shadowed"' just-plug.lock)" "rescue clears the lock entry"
+assert_contains "$(just --summary)" "shadowed" "the project justfile parses again"
 
 assert_exit

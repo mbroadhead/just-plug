@@ -625,6 +625,13 @@ install spec="" *flags:
     echo "installed $name @ $ref ($sha)"
 
 # Remove an installed module.
+#
+# Runnable on its own, unlike the other recipes: a module name that collides
+# with a recipe stops the project justfile from parsing, which takes `just plug
+# remove` down with it. The rescue is to bypass the broken justfile entirely —
+#     JUST_PLUG_DIR=.. just -f just-plug/plug.just remove <name>
+# — where these recipes are top-level rather than under a `plug` module, so the
+# sub-just calls below have to drop the prefix.
 remove name:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -637,15 +644,19 @@ remove name:
     fi
     name='{{name}}'
     jf='{{justfile()}}'
+    # justfile() and source_file() are equal only when plug.just is the justfile
+    # being run, i.e. the rescue invocation above.
+    p=plug
+    if [ '{{justfile()}}' = '{{source_file()}}' ]; then p=""; fi
     file="$root/just-plug/$name.just"
     installed=0
     if [ -f "$file" ]; then
         rm -f "$file"
         installed=1
     fi
-    just --justfile "$jf" plug _remove-dep "$name"
-    just --justfile "$jf" plug _remove-lock "$name"
-    just --justfile "$jf" plug _gen-modules
+    just --justfile "$jf" $p _remove-dep "$name"
+    just --justfile "$jf" $p _remove-lock "$name"
+    just --justfile "$jf" $p _gen-modules
     if [ "$installed" -eq 1 ]; then
         echo "removed $name"
     else
