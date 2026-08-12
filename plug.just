@@ -129,6 +129,20 @@ _source-to-url source:
         echo "$base/$repo_path"
     fi
 
+# Print the entry filename a source publishes: the repo basename, minus a
+# leading `just-`, plus `.just`. This is the name of the file inside the repo,
+# which is fixed by the publisher — unlike the local module name, which `install
+# --as` can override. Every fetch names the remote file with this, and the local
+# artifact with the module name.
+_entry-file source:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    repo='{{source}}'
+    repo="${repo%/}"
+    repo="${repo%.git}"
+    repo="${repo##*/}"
+    echo "${repo#just-}.just"
+
 # Resolve a ref to a 40-char commit SHA.
 # Args: <source> <ref>  (source is the full form as stored in deps/lock)
 # - If <ref> matches ^[0-9a-f]{7,40}$, pass through unchanged.
@@ -385,7 +399,8 @@ install spec="":
             if [ -f "$root/just-plug/$name.just" ] && [ -n "$hash_recorded" ]; then
                 : # leave it
             else
-                hash_recorded="$(just --justfile "$jf" plug _fetch "$source" "$sha" "$name.just" "$root/just-plug/$name.just")"
+                entry="$(just --justfile "$jf" plug _entry-file "$source")"
+                hash_recorded="$(just --justfile "$jf" plug _fetch "$source" "$sha" "$entry" "$root/just-plug/$name.just")"
             fi
             just --justfile "$jf" plug _upsert-lock "$name" "$source" "$ref" "$sha" "$hash_recorded"
         done < <(just --justfile "$jf" plug _read-deps)
@@ -545,14 +560,15 @@ update name="":
 
     update_one() {
         local n="$1" src="$2" ref="$3"
-        local new_sha old_sha old_hash new_hash
+        local new_sha old_sha old_hash new_hash entry
         new_sha="$(just --justfile "$jf" plug _resolve-ref "$src" "$ref")"
         old_sha="$(awk -v n="$n" '$1==n {print $4}' "$root/just-plug.lock" 2>/dev/null || true)"
         old_hash="$(awk -v n="$n" '$1==n {print $5}' "$root/just-plug.lock" 2>/dev/null || true)"
         if [ "$new_sha" = "$old_sha" ] && [ -f "$root/just-plug/$n.just" ]; then
             return 0  # no change
         fi
-        new_hash="$(just --justfile "$jf" plug _fetch "$src" "$new_sha" "$n.just" "$root/just-plug/$n.just")"
+        entry="$(just --justfile "$jf" plug _entry-file "$src")"
+        new_hash="$(just --justfile "$jf" plug _fetch "$src" "$new_sha" "$entry" "$root/just-plug/$n.just")"
         just --justfile "$jf" plug _upsert-lock "$n" "$src" "$ref" "$new_sha" "$new_hash"
         echo "updated $n: $old_sha → $new_sha"
     }
