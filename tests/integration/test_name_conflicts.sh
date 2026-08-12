@@ -125,6 +125,23 @@ assert_contains "$out" "--as" "different-source collision suggests --as"
 assert_contains "$(cat just-plug.lock)" "github.com/demo/just-doit" "original install untouched"
 just plug remove tasks >/dev/null
 
+# --- Reconcile mode can break the justfile the same way, and is the likelier way
+# to hit it: `mod?`/`import?` are optional, so a checkout whose justfile shadows a
+# name in just-plug.deps parses fine right up until someone runs a bare
+# `just plug install` and modules.just appears. That must roll back too.
+echo "doit github.com/demo/just-doit v2.0.0" >> just-plug.deps
+lock_before="$(cat just-plug.lock)"
+out="$(just plug install 2>&1 || true)"
+assert_contains "$out" "rolled back" "reconcile rolls back a colliding dep"
+assert_file_missing "$PROJ/just-plug/doit.just" "reconcile rollback deletes the fetched file"
+assert_eq "" "$(grep 'doit' just-plug/modules.just || true)" "reconcile rollback clears modules.just"
+assert_eq "$lock_before" "$(cat just-plug.lock)" "reconcile rollback restores the lockfile"
+assert_contains "$(just --summary)" "doit" "justfile parses again after reconcile rollback"
+# just-plug.deps is the user's file, so the rollback leaves it as they wrote it —
+# the conflict is still there to fix, and reconcile is not the thing to fix it.
+assert_contains "$(cat just-plug.deps)" "doit github.com/demo/just-doit" "reconcile leaves deps alone"
+sed -i.bak '/^doit /d' just-plug.deps && rm -f just-plug.deps.bak
+
 # --- Rescue: nothing stops a user adding a recipe that shadows a module they
 # already installed. That breaks every just command in the project, `just plug
 # remove` included, so plug.just has to be runnable on its own. Appending to the

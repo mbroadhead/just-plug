@@ -441,6 +441,24 @@ install spec="" *flags:
         # 1. For every dep, install at lock SHA if present, else freshly resolve.
         # 2. Remove any installed module not in deps.
         mkdir -p "$root/just-plug"
+
+        # Reconcile can break the justfile the same way a single install can, and
+        # it is the likelier way to hit it: `mod?`/`import?` are optional, so a
+        # checkout with no modules.just parses fine even when a recipe shadows a
+        # name in just-plug.deps. The break only lands when someone runs this and
+        # modules.just appears. Snapshot everything mutated below so it can be
+        # undone — with cp, since _remove-lock and _gen-modules are sub-`just`
+        # calls and cannot run once the justfile has stopped parsing.
+        parsed_before=1
+        just --justfile "$jf" --summary >/dev/null 2>&1 || parsed_before=0
+        backup="$(mktemp -d)"
+        trap 'rm -rf "$backup"' EXIT
+        for f in just-plug.deps just-plug.lock; do
+            if [ -f "$root/$f" ]; then cp "$root/$f" "$backup/$f"; fi
+        done
+        mkdir -p "$backup/just-plug"
+        cp -R "$root/just-plug/." "$backup/just-plug/"
+
         deps_names="$(just --justfile "$jf" plug _read-deps | awk '{print $1}' | sort -u)"
         lock_names="$(just --justfile "$jf" plug _read-lock | awk '{print $1}' | sort -u)"
 
@@ -474,6 +492,30 @@ install spec="" *flags:
         done
 
         just --justfile "$jf" plug _gen-modules
+
+        # Same backstop as single-install: the justfile parsed before this ran, so
+        # if it does not now, this run is why. just's own error names the module.
+        if [ "$parsed_before" -eq 1 ] && ! just --justfile "$jf" --summary >/dev/null 2>&1; then
+            parse_error="$(just --justfile "$jf" --summary 2>&1 || true)"
+            for f in just-plug.deps just-plug.lock; do
+                if [ -f "$backup/$f" ]; then cp "$backup/$f" "$root/$f"; else rm -f "$root/$f"; fi
+            done
+            # Drop what this run added, then restore what it changed or removed.
+            for f in "$root"/just-plug/*.just; do
+                if [ -e "$f" ] && [ ! -f "$backup/just-plug/$(basename "$f")" ]; then
+                    rm -f "$f"
+                fi
+            done
+            cp -R "$backup/just-plug/." "$root/just-plug/"
+            echo "error: reconciling just-plug.deps left your justfile unparseable; rolled back" >&2
+            echo "$parse_error" >&2
+            echo "       a name in just-plug.deps collides with a recipe or module in your justfile" >&2
+            echo "       reinstall that module under a different name:" >&2
+            echo "           just plug remove <name>" >&2
+            echo "           just plug install <source> --as <new-name>" >&2
+            exit 1
+        fi
+
         exit 0
     fi
 

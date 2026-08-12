@@ -76,13 +76,17 @@ Checks 1–3 cover the known ways an install breaks a justfile. As a backstop fo
 
 The restore is done with `cp`, not with the `_remove-dep` / `_remove-lock` / `_gen-modules` helpers: those are sub-`just` invocations, and in the broken state they cannot run.
 
+Reconcile mode (bare `just plug install`) gets the same backstop, and needs it more than single-install does. The name probes of §4 run against a single name the user just typed; reconcile installs whatever `just-plug.deps` already says, so there is no typed name to check and no moment at which the user chose it. It is also the likelier way to reach the broken state: `mod?` and `import?` are optional forms, so a checkout with no `just-plug/modules.just` parses cleanly even when a recipe shadows a dep name. Whoever adds the shadowing recipe sees nothing wrong; the break lands on the next person to run `just plug install`.
+
+Reconcile snapshots `just-plug.deps`, `just-plug.lock`, and all of `just-plug/` — it fetches and removes several module files per run, not one. On failure it restores the snapshot, deletes the `.just` files the run added, and reports just's own parse error, which names the offending module. `just-plug.deps` is restored but not edited: the conflict is the user's to resolve with `remove` plus `install --as`, and silently dropping a dep entry would be a worse outcome than the error.
+
 ## 6. Out of scope
 
 - **`just plug rename`.** Renaming an installed module in place is `remove` then `install --as`. A dedicated recipe would need to rewrite deps, lock, the local file, and `modules.just` for a case that comes up once.
 - **Auto-renaming on conflict** (`doit` → `doit2`). Makes recipe names depend on install order, so they differ between machines that installed the same modules in different sequences.
 - **Namespacing every module under one parent** (`just plug docker build`). Structurally removes the whole class of conflict, but breaks every existing call site and demotes modules to second-class citizens.
 - **A conflict check in `verify`.** Unreachable: a conflict stops `just plug verify` from parsing in the first place. CI already fails loudly with just's own message. The README documents the rescue command instead.
-- **Conflicts introduced after install** (the user adds a recipe that shadows an installed module). Not preventable from inside just-plug; covered by documentation.
+- **Conflicts introduced after install** (the user adds a recipe that shadows a module already present in `just-plug/`). Nothing runs at the moment the justfile breaks, so there is nothing to check from; covered by the recovery command in §7. The related case where the shadowing recipe is committed *before* the modules are installed is caught, by the reconcile rollback in §5.
 
 ## 7. Recovering from an existing conflict
 
@@ -103,6 +107,7 @@ One integration test, `tests/integration/test_name_conflicts.sh`, on the existin
 3. Installing a module whose derived name collides with an existing recipe fails, mentions `--as`, and leaves no file, deps entry, or lock entry behind.
 4. The same install with `--as` succeeds.
 5. A source deriving an illegal name (`just-my.thing`) fails and mentions `--as`.
+6. A `just-plug.deps` entry that collides with an existing recipe makes a bare `just plug install` roll back: no module file, `modules.just` and the lockfile restored, `just-plug.deps` left as the user wrote it, and the justfile parses again.
 
 One unit test, `tests/unit/test_entry_file.sh`, for the remote-filename derivation across bare, HTTPS, SSH, and `file://` source forms.
 

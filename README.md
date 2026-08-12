@@ -92,6 +92,8 @@ The name you pick is the name everything else uses — `just containers <recipe>
 
 ### Recovering from a conflict
 
+A bare `just plug install`, which reconciles against `just-plug.deps`, checks the same thing a different way: it restores `just-plug.deps`, `just-plug.lock`, and `just-plug/` if the justfile stops parsing. This is the case to expect on a fresh clone, since `mod?` and `import?` are optional — a justfile that shadows a name in `just-plug.deps` parses fine until someone installs the modules and `just-plug/modules.just` appears.
+
 If a conflict already exists — usually because a recipe was added to the justfile *after* the module was installed — then `just plug remove` cannot run either, since it also has to parse the broken justfile. Run `plug.just` directly instead:
 
 ```sh
