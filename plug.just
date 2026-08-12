@@ -179,13 +179,17 @@ _resolve-ref source ref:
     set -euo pipefail
     source='{{source}}'
     ref='{{ref}}'
+    # Drop the module prefix when plug.just is itself the justfile being run —
+    # see the comment on `remove` for why that invocation has to work.
+    p=plug
+    if [ '{{justfile()}}' = '{{source_file()}}' ]; then p=""; fi
 
     if [[ "$ref" =~ ^[0-9a-f]{7,40}$ ]]; then
         echo "$ref"
         exit 0
     fi
 
-    url="$(just --justfile '{{justfile()}}' plug _source-to-url "$source")"
+    url="$(just --justfile '{{justfile()}}' $p _source-to-url "$source")"
 
     # Try tag first, then branch. ls-remote prints lines like "<sha>\t<full-ref>".
     sha="$(git ls-remote "$url" "refs/tags/$ref" 2>/dev/null | awk 'NR==1{print $1}')"
@@ -213,13 +217,16 @@ _fetch source sha filename dest:
     sha='{{sha}}'
     filename='{{filename}}'
     dest='{{dest}}'
+    # See _resolve-ref: the module prefix is wrong when plug.just is the justfile.
+    p=plug
+    if [ '{{justfile()}}' = '{{source_file()}}' ]; then p=""; fi
 
     tmp="$(mktemp "${dest}.XXXXXX")"
     trap 'rm -f "$tmp"' EXIT
 
     if [[ "$source" =~ ^https:// ]] || [[ "$source" =~ ^file:// ]] || [[ "$source" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+: ]]; then
         # URL form: shallow git fetch by SHA, extract one file.
-        url="$(just --justfile '{{justfile()}}' plug _source-to-url "$source")"
+        url="$(just --justfile '{{justfile()}}' $p _source-to-url "$source")"
         work="$(mktemp -d)"
         trap 'rm -f "$tmp"; rm -rf "$work"' EXIT
         git -C "$work" init -q
@@ -842,6 +849,9 @@ outdated:
 
 # Update just-plug itself. Defaults to github.com/mbroadhead/just-plug@main.
 # Usage: just plug self-update [<spec>|@<ref>]
+#
+# Runnable on its own, like `remove`, so a copy shared between projects can be
+# updated where it lives: `just -f <path>/plug.just self-update`.
 self-update spec="":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -853,6 +863,8 @@ self-update spec="":
         esac
     fi
     jf='{{justfile()}}'
+    p=plug
+    if [ '{{justfile()}}' = '{{source_file()}}' ]; then p=""; fi
     spec='{{spec}}'
 
     # Expand shorthand: empty or bare @<ref> → default source.
@@ -862,16 +874,51 @@ self-update spec="":
         spec="github.com/mbroadhead/just-plug${spec}"
     fi
 
-    parsed="$(just --justfile "$jf" plug _parse-source "$spec")"
+    # Update the file this recipe is running from, not a conventional path.
+    # `mod plug` can point anywhere, and a project that points it somewhere else
+    # keeps loading the old copy while self-update reports success on a file
+    # nothing reads.
+    target='{{source_file()}}'
+
+    # Both checks below are about a project updating a file it may not own, so
+    # they are skipped when plug.just was named directly on the command line.
+    if [ -n "$p" ]; then
+        # Compare resolved paths. justfile_directory() is already resolved, but an
+        # absolute path in `mod plug` keeps the form the user typed, and on macOS
+        # /tmp and /var are symlinks — enough to fail a plain prefix match.
+        target_dir="$(cd "$(dirname "$target")" 2>/dev/null && pwd -P || echo "$(dirname "$target")")"
+        root_dir="$(cd "$root" 2>/dev/null && pwd -P || echo "$root")"
+        target="$target_dir/$(basename "$target")"
+        case "$target" in
+            "$root_dir"/*) ;;
+            *)
+                echo "error: just-plug is loaded from outside $root_dir:" >&2
+                echo "           $target" >&2
+                echo "       that copy may be shared with other projects, so this one" >&2
+                echo "       will not overwrite it. Update it where it lives:" >&2
+                echo "           just -f '$target' self-update" >&2
+                exit 1
+                ;;
+        esac
+
+        # A second copy at the conventional path is the shape of an old layout,
+        # and it reads as the file that just got updated. Name the one in use.
+        conventional="$root_dir/just-plug/plug.just"
+        if [ "$target" != "$conventional" ] && [ -f "$conventional" ]; then
+            echo "note: your justfile loads $target" >&2
+            echo "      the copy at $conventional is unused" >&2
+        fi
+    fi
+
+    parsed="$(just --justfile "$jf" $p _parse-source "$spec")"
     read -r _ source ref <<<"$parsed"
 
-    sha="$(just --justfile "$jf" plug _resolve-ref "$source" "$ref")"
+    sha="$(just --justfile "$jf" $p _resolve-ref "$source" "$ref")"
     short_sha="${sha:0:7}"
 
-    target="$root/just-plug/plug.just"
     tmp="$(mktemp "${target}.XXXXXX")"
     trap 'rm -f "$tmp"' EXIT
-    just --justfile "$jf" plug _fetch "$source" "$sha" plug.just "$tmp" >/dev/null
+    just --justfile "$jf" $p _fetch "$source" "$sha" plug.just "$tmp" >/dev/null
 
     if [ -f "$target" ] && cmp -s "$target" "$tmp"; then
         echo "just-plug is up to date at $short_sha"

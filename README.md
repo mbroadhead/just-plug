@@ -129,6 +129,14 @@ A CI workflow checks the module parses on every push; the release workflow creat
 
 These paths are rooted at the directory of your top-level justfile by default. Set [`JUST_PLUG_DIR`](#custom-artifact-location) to relocate them.
 
+`plug.just` does not have to live at that path — `mod plug` can point anywhere, and `just plug self-update` rewrites whichever copy your justfile actually loads. If you have an old copy sitting at `just-plug/plug.just` that nothing loads, self-update says so, since an unused second copy is easy to mistake for the live one.
+
+A copy outside your project — one shared between several projects, say — is not a project's to overwrite, so self-update refuses and tells you to update it where it lives:
+
+```sh
+just -f ~/lib/plug.just self-update
+```
+
 ## Custom artifact location
 
 By default, all just-plug artifacts (`just-plug.deps`, `just-plug.lock`, `just-plug/`) live next to your top-level justfile. Set `JUST_PLUG_DIR` in the environment to relocate them:
